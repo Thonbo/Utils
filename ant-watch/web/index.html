@@ -161,11 +161,7 @@ details ul { padding-left: 18px; margin: 10px 0 0; }
 
   <section class="card add-panel" id="add-panel" hidden>
     <div class="add-head"><h2>Your stocks</h2><button class="icon-btn" id="add-close" aria-label="Close"><!-- Lucide "x" --><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
-    <p class="hint">Switch a stock off to hide it and pause its alerts. It stays on the list so you can switch it back on.</p>
-    <div class="key-row top" id="add-key-row">
-      <label for="add-key">Your edit key. You only need to enter it once on each device.</label>
-      <input class="field" id="add-key" type="password" autocomplete="off" placeholder="Edit key">
-    </div>
+    <p class="hint">Your list is saved in this browser only, so your phone and computer each keep their own. Switch a stock off to hide it without deleting it.</p>
     <ul class="manage" id="manage-list"></ul>
     <h2 class="add-title">Add a stock</h2>
     <input class="field" id="add-search" type="search" placeholder="Search by company or ticker, e.g. Tesla or AAPL" autocomplete="off" aria-label="Search stocks">
@@ -212,7 +208,7 @@ details ul { padding-left: 18px; margin: 10px 0 0; }
     </details>
   </section>
 
-  <p class="foot">Each stock has its own <a href="https://github.com/Thonbo/Utils/issues?q=is%3Aissue+label%3Astock-watch" rel="noopener">GitHub dashboard issue</a>, which sends the alerts. Prices are from Yahoo Finance and can be delayed by up to 15 minutes.<br>
+  <p class="foot">Alerts are sent from <a href="https://github.com/Thonbo/Utils/issues?q=is%3Aissue+label%3Astock-watch" rel="noopener">GitHub</a> for Anthropic, NVIDIA and SpaceX. Prices are from Yahoo Finance and can be delayed by up to 15 minutes.<br>
   Indicators describe the past, not the future. This is not financial advice.</p>
 </main>
 <script type="module" src="app.js"></script>

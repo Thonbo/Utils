@@ -23,7 +23,7 @@ jobs:
       - name: Check each stock and update its dashboard issue
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # The list you edit on the website. If the site can't be reached, WATCHLIST below is used.
-          WATCHLIST_URL: "https://stockwise-watch.netlify.app/api/watchlist"
+          # The stocks that get alerts: SYMBOL:Name[:IPO price], comma-separated.
+          # (The website's lists are saved in each browser, so the notifier can't see them.)
           WATCHLIST: "ANT:Anthropic:83,NVDA:NVIDIA,SPCX:SpaceX:135"
         run: python3 ant-watch/ant_watch.py

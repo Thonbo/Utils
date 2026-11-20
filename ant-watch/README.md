@@ -31,21 +31,19 @@ A stock with fewer than 60 trading days of history is judged on 15‑minute bars
 
 - `ant_watch.py` is the notifier. It runs on GitHub Actions and updates one issue per stock.
 - `web/` is the Netlify page. `web/analysis.js` is a JavaScript copy of the same rules; keep the two in sync.
-- `netlify/functions/` holds the server code: `chart.mts` (prices), `search.mts` (stock search) and `watchlist.mts` (the saved list). They fetch from Yahoo on the server, because Yahoo blocks requests made straight from a browser. Shared code is in `netlify/lib/yahoo.mts`.
+- `netlify/functions/` holds the server code: `chart.mts` (prices) and `search.mts` (stock search). They fetch from Yahoo on the server, because Yahoo blocks requests made straight from a browser. Shared code is in `netlify/lib/yahoo.mts`.
 - The Netlify project is called `stockwise-watch`.
 
 ## Adding, switching off and deleting stocks
 
 On the website, tap **Edit list**:
 - **Add:** search by company name or ticker and tap a result.
-- **Switch off/on:** a stock that's off is hidden from the dashboard and sends no alerts, but stays on the list so you can switch it back on.
+- **Switch off/on:** a stock that's off is hidden from the dashboard but stays on the list.
 - **Delete** (bin icon): removes it from the list completely.
 
-At least one stock always stays switched on.
+Your list is saved **in your browser** (local storage), with no account or password. Each browser and device keeps its own list, and a new browser starts with Anthropic, NVIDIA and SpaceX. You can have up to 20 stocks, and at least one always stays switched on.
 
-Changing the list needs your **edit key**. You enter it once on each device. The key is stored on Netlify as the secret environment variable `WATCHLIST_EDIT_KEY` (project `stockwise-watch`, production context); change it there if you lose it or want a new one, then redeploy. Anyone can view the page, but only someone with the key can change the list.
-
-The list is saved on Netlify (`/api/watchlist`, in Netlify Blobs), so it's the same on every device. The GitHub notifier reads the same list, so added stocks get alerts too. If the website can't be reached, the notifier uses the fallback `WATCHLIST` in `.github/workflows/ant-watch.yml`. You can have up to 15 stocks.
+**Alerts** come from the GitHub notifier, which can't see browser lists. It checks the stocks in `WATCHLIST` in `.github/workflows/ant-watch.yml`; edit that line to change which stocks send alerts.
 
 ## Time ranges
 

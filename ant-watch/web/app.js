@@ -1,7 +1,9 @@
 import { analyze, analyzeSeries } from "./analysis.js";
 
-// The list itself lives on the server (/api/watchlist) so it is the same on every device.
-// This default is only used if the server can't be reached.
+// Each browser keeps its own list in local storage (no account or key needed).
+// A new browser starts with this list.
+const LIST_KEY = "stockwise-list";
+const MAX_STOCKS = 20;
 const DEFAULT_WATCHLIST = [
   { symbol: "ANT", name: "Anthropic", ipo: 83 },
   { symbol: "NVDA", name: "NVIDIA" },
@@ -65,7 +67,7 @@ let WATCHLIST = DEFAULT_WATCHLIST;
 const cache = {}; // symbol -> { data, model, intraRows, dailyRows, error, stale }
 let current = null, data = null, model = null, entry = null, range = store.get("stockwatch-range") || "5D", hoverIdx = null;
 const cfg = () => WATCHLIST.find((w) => w.symbol === current) ?? { symbol: current, name: current };
-// Stocks switched off in "Edit list" stay on the list but are hidden here and get no alerts.
+// Stocks switched off in "Edit list" stay on the list but are hidden from the dashboard.
 const active = () => WATCHLIST.filter((w) => w.on !== false);
 
 function icon(state) {
@@ -425,7 +427,6 @@ let searchTimer = null, searchSeq = 0;
 function toggleAdd(open) {
   const panel = $("add-panel");
   panel.hidden = open === undefined ? !panel.hidden : !open;
-  $("add-key-row").hidden = !!store.get("stockwatch-key");
   $("add-msg").textContent = "";
   renderManage();
   renderWatchlist();
@@ -446,7 +447,7 @@ function renderManage() {
     sw.setAttribute("role", "switch");
     sw.setAttribute("aria-checked", String(on));
     sw.setAttribute("aria-label", `${w.name} ${on ? "on" : "off"}`);
-    sw.title = on ? "On: shown and sends alerts" : "Off: hidden, no alerts";
+    sw.title = on ? "On: shown on your dashboard" : "Off: hidden from your dashboard";
     sw.disabled = on && onCount <= 1;
     sw.onclick = () => toggleStock(w.symbol, !on);
     const del = h("button", "icon-btn danger");
@@ -483,22 +484,29 @@ async function runSearch(q) {
     if (seq === searchSeq) { list.innerHTML = ""; list.append(h("li", "err", `Search failed: ${e.message}`)); }
   }
 }
-function editKey() {
-  const typed = $("add-key")?.value.trim();
-  if (typed) store.set("stockwatch-key", typed);
-  return store.get("stockwatch-key");
+function shortName(name) {
+  return name.replace(/,?\s+(Inc\.?|Corporation|Corp\.?|Incorporated|Holdings?|Ltd\.?|PLC|plc|N\.V\.|S\.A\.|Co\.?|Company|Group)$/i, "").trim() || name;
 }
+function saveList() { store.set(LIST_KEY, JSON.stringify(WATCHLIST)); }
+// Changes the list saved in this browser. Throws with a plain message if the change isn't allowed.
 async function changeList(action, symbol, name, on) {
-  const key = editKey();
-  if (!key) throw new Error("Enter your edit key first.");
-  const res = await fetch("/api/watchlist", {
-    method: "POST", headers: { "Content-Type": "application/json", "X-Edit-Key": key },
-    body: JSON.stringify({ action, symbol, name, on }),
-  });
-  const json = await res.json().catch(() => ({}));
-  if (res.status === 401) { store.set("stockwatch-key", null); $("add-key-row").hidden = false; }
-  if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
-  WATCHLIST = json.stocks;
+  const isOn = (w) => w.on !== false;
+  if (action === "add") {
+    if (WATCHLIST.some((w) => w.symbol === symbol)) return;
+    if (WATCHLIST.length >= MAX_STOCKS) throw new Error(`Your list is full (${MAX_STOCKS} stocks). Delete one first.`);
+    await fetchOne(symbol); // make sure there are prices for it before adding
+    if (!cache[symbol]?.data) { delete cache[symbol]; throw new Error(`No price data found for ${symbol}.`); }
+    WATCHLIST = [...WATCHLIST, { symbol, name: shortName(name || symbol).slice(0, 40) }];
+  } else if (action === "remove") {
+    const rest = WATCHLIST.filter((w) => w.symbol !== symbol);
+    if (!rest.some(isOn)) throw new Error("Keep at least one stock switched on.");
+    WATCHLIST = rest;
+  } else if (action === "toggle") {
+    const next = WATCHLIST.map((w) => (w.symbol === symbol ? { ...w, on } : w));
+    if (!next.some(isOn)) throw new Error("Keep at least one stock switched on.");
+    WATCHLIST = next;
+  }
+  saveList();
 }
 async function addStock(symbol, name) {
   setMsg(`Adding ${symbol}…`);
@@ -506,7 +514,6 @@ async function addStock(symbol, name) {
     await changeList("add", symbol, name);
     $("add-search").value = ""; $("add-results").innerHTML = "";
     toggleAdd(false);
-    await fetchOne(symbol);
     select(symbol);
   } catch (e) {
     setMsg(e.message, "err");
@@ -514,7 +521,6 @@ async function addStock(symbol, name) {
 }
 function afterListChange() {
   if (!active().some((w) => w.symbol === current)) current = active()[0].symbol;
-  $("add-key-row").hidden = !!store.get("stockwatch-key");
   renderManage();
   select(current);
 }
@@ -523,7 +529,7 @@ async function toggleStock(symbol, on) {
   setMsg(`Turning ${name} ${on ? "on" : "off"}…`);
   try {
     await changeList("toggle", symbol, undefined, on);
-    setMsg(on ? `${name} is on: shown here and sends alerts.` : `${name} is off: hidden and no alerts. Switch it back on any time.`);
+    setMsg(on ? `${name} is on and shown on your dashboard.` : `${name} is off and hidden. Switch it back on any time.`);
     if (on && !cache[symbol]?.data) await fetchOne(symbol);
     afterListChange();
   } catch (e) {
@@ -561,18 +567,17 @@ async function fetchOne(symbol) {
     else cache[symbol] = { error: e.message };
   }
 }
-async function loadWatchlist() {
+function loadWatchlist() {
   try {
-    const res = await fetch("/api/watchlist", { cache: "no-store" });
-    const json = await res.json();
-    if (res.ok && Array.isArray(json.stocks) && json.stocks.length) WATCHLIST = json.stocks;
+    const saved = JSON.parse(store.get(LIST_KEY) || "null");
+    if (Array.isArray(saved) && saved.length && saved.every((w) => w && typeof w.symbol === "string")) WATCHLIST = saved;
   } catch {}
   if (!active().length) WATCHLIST = WATCHLIST.map((w, i) => (i === 0 ? { ...w, on: true } : w));
   if (!active().some((w) => w.symbol === current)) current = active()[0].symbol;
   if (!$("add-panel").hidden) renderManage();
 }
 async function load() {
-  await loadWatchlist();
+  loadWatchlist();
   // The selected stock first, so its view appears quickly; then the rest.
   await fetchOne(current);
   renderWatchlist(); renderCurrent();

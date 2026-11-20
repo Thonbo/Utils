@@ -1,8 +1,0 @@
-{
-  "name": "stock-watch",
-  "private": true,
-  "description": "Netlify functions for the Stockwise page (ant-watch/web).",
-  "dependencies": {
-    "@netlify/blobs": "11.1.6"
-  }
-}
