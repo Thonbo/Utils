@@ -100,6 +100,18 @@ class StateMachine(unittest.TestCase):
         self.assertEqual(a, [])
 
 
+class Watchlist(unittest.TestCase):
+    def test_parse(self):
+        wl = aw.parse_watchlist("ANT:Anthropic:83, nvda:NVIDIA ,SPCX:SpaceX:135")
+        self.assertEqual([w["symbol"] for w in wl], ["ANT", "NVDA", "SPCX"])
+        self.assertEqual((wl[0]["ipo"], wl[1]["ipo"], wl[2]["name"]), (83.0, None, "SpaceX"))
+
+    def test_alerts_name_the_ticker(self):
+        s, _ = aw.step({}, {"state": "NORMAL"}, None, "d", "NVDA")
+        s, a = aw.step(s, {"state": "NORMAL"}, 6.0, "d", "NVDA")
+        self.assertIn("NVDA is up", a[0])
+
+
 class EndToEnd(unittest.TestCase):
     def test_parse_and_render(self):
         rnd = random.Random(6)
@@ -112,8 +124,10 @@ class EndToEnd(unittest.TestCase):
         self.assertEqual(len(intraday["c"]), 50)  # null bar dropped
         daily = make_bars([83, 97.17, closes[-1]])
         state, alerts, res, quote = aw.run(intraday, daily, {})
-        body = aw.render(state, res, quote, [], "someone")
-        self.assertIn("ANT is", body)
+        body = aw.render(state, res, quote, [], "someone", "ANT", "Anthropic", 83)
+        self.assertIn("Anthropic (ANT) is", body)
+        self.assertIn("vs IPO price $83", body)
+        self.assertNotIn("IPO", aw.render(state, res, quote, [], "", "NVDA", "NVIDIA", None).split("<details>")[0])
         self.assertEqual(aw.load_state(body)["confirmed"], state["confirmed"])
         self.assertIsNone(aw.run(intraday, daily, state))  # same data again -> skipped
 

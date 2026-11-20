@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""ANT Watch - follows a stock (default: Anthropic, Nasdaq: ANT) and classifies it as
+"""Stock Watch (started as ANT Watch) - follows a watchlist of stocks (default: Anthropic,
+NVIDIA and SpaceX) and classifies each as
 RISING, FALLING, STABLE, VOLATILE or NORMAL using widely used technical indicators:
 
   * ADX(14) with +DI/-DI (Wilder)  -> is there a trend, and which way?
@@ -8,8 +9,8 @@ RISING, FALLING, STABLE, VOLATILE or NORMAL using widely used technical indicato
   * ATR(14) as % of price (Wilder)  -> how much it moves per bar vs. usual
   * RSI(14) (Wilder)                -> overheated (>70) / oversold (<30)
 
-Runs on GitHub Actions. State and the dashboard live in one GitHub issue; a comment is
-added to that issue (which notifies you) only when something is worth a look.
+Runs on GitHub Actions. Each stock has its own GitHub issue holding its dashboard and state;
+a comment is added to that issue (which notifies you) only when something is worth a look.
 
 Python standard library only. Not financial advice.
 """
@@ -33,14 +34,23 @@ try:
 except Exception:  # pragma: no cover
     ET = timezone.utc
 
-TICKER = os.environ.get("TICKER", "ANT")
-IPO_PRICE = float(os.environ.get("IPO_PRICE", "83"))
+# WATCHLIST: comma-separated SYMBOL:Name[:IPO price]
+WATCHLIST = os.environ.get("WATCHLIST", "ANT:Anthropic:83,NVDA:NVIDIA,SPCX:SpaceX:135")
 BIG_MOVE_PCT = float(os.environ.get("BIG_MOVE_PCT", "5"))
 CONFIRM_RUNS = 2          # a new state must show up this many checks in a row before alerting
 WARMUP_BARS = 30          # fewer bars than this -> not enough data yet
 DAILY_SWITCH_BARS = 60    # once this many trading days exist, judge on daily bars
 STATE_MARK = "ant-watch-state"
-LABEL = "ant-watch"
+LABEL = "stock-watch"
+
+
+def parse_watchlist(text):
+    out = []
+    for item in filter(None, (x.strip() for x in text.split(","))):
+        parts = item.split(":")
+        out.append({"symbol": parts[0].upper(), "name": parts[1] if len(parts) > 1 and parts[1] else parts[0].upper(),
+                    "ipo": float(parts[2]) if len(parts) > 2 and parts[2] else None})
+    return out
 
 # --------------------------------------------------------------------------- indicators
 
@@ -239,7 +249,7 @@ ALERT_TEXT = {
 }
 
 
-def step(prev: dict, res: dict, day_change, today: str):
+def step(prev: dict, res: dict, day_change, today: str, ticker: str = "ANT"):
     """Advance the stored state with a new analysis. Returns (new_state, alerts[list of str])."""
     s = dict(prev or {})
     s.setdefault("confirmed", None)
@@ -259,9 +269,9 @@ def step(prev: dict, res: dict, day_change, today: str):
             s["confirmed"], s["pending"], s["pending_count"] = cand, None, 0
             s["since"] = res.get("time")
             if old is not None and cand in ALERT_TEXT and cand != "WARMING_UP":
-                msg = ALERT_TEXT[cand].format(t=TICKER)
+                msg = ALERT_TEXT[cand].format(t=ticker)
                 if old == "STABLE" and cand == "RISING":
-                    msg = (f"🚀 **{TICKER} is breaking out of a calm period (Stable → Rising).** "
+                    msg = (f"🚀 **{ticker} is breaking out of a calm period (Stable → Rising).** "
                            "Rises out of a quiet stretch are the classic 'buy before it runs' moment.")
                     if res.get("volume_ratio") and res["volume_ratio"] >= 1.5:
                         msg += f" Volume is {res['volume_ratio']:.1f}× normal, which backs it up."
@@ -273,10 +283,10 @@ def step(prev: dict, res: dict, day_change, today: str):
         zone = "hot" if r >= 70 else "cold" if r <= 30 else "mid"
         if zone != s.get("rsi_zone") and s.get("rsi_zone") is not None:
             if zone == "hot":
-                alerts.append(f"🔥 **{TICKER} looks overheated (RSI {r:.0f} > 70).** Prices often cool off after this - "
+                alerts.append(f"🔥 **{ticker} looks overheated (RSI {r:.0f} > 70).** Prices often cool off after this - "
                               "chasing here is risky.")
             elif zone == "cold":
-                alerts.append(f"🧊 **{TICKER} looks oversold (RSI {r:.0f} < 30).** Selling may be overdone - "
+                alerts.append(f"🧊 **{ticker} looks oversold (RSI {r:.0f} < 30).** Selling may be overdone - "
                               "worth a look if it starts to stabilize.")
         s["rsi_zone"] = zone
 
@@ -287,10 +297,10 @@ def step(prev: dict, res: dict, day_change, today: str):
             moves = {"date": today}
         if day_change >= BIG_MOVE_PCT and not moves.get("up"):
             moves["up"] = True
-            alerts.append(f"🚨 **{TICKER} is up {day_change:+.1f}% today.**")
+            alerts.append(f"🚨 **{ticker} is up {day_change:+.1f}% today.**")
         if day_change <= -BIG_MOVE_PCT and not moves.get("down"):
             moves["down"] = True
-            alerts.append(f"🚨 **{TICKER} is down {day_change:+.1f}% today.**")
+            alerts.append(f"🚨 **{ticker} is down {day_change:+.1f}% today.**")
         s["moves"] = moves
     return s, alerts
 
@@ -349,8 +359,17 @@ def readings(res):
     if res.get("bbw") is not None:
         rk = res.get("bbw_rank")
         word = "narrow (squeeze)" if rk is not None and rk <= 0.35 else "wide" if rk is not None and rk >= 0.8 else "average"
-        rows.append(("Bollinger Band width (20, 2)", f"{res['bbw'] * 100:.1f}%",
-                     f"{word} – narrower than {100 - rk * 100:.0f}% of recent history" if rk is not None else word))
+        if rk is None:
+            detail = word
+        elif rk >= 0.99:
+            detail = f"{word} – the widest in recent history"
+        elif rk <= 0.01:
+            detail = f"{word} – the narrowest in recent history"
+        elif rk >= 0.5:
+            detail = f"{word} – wider than {rk * 100:.0f}% of recent history"
+        else:
+            detail = f"{word} – narrower than {100 - rk * 100:.0f}% of recent history"
+        rows.append(("Bollinger Band width (20, 2)", f"{res['bbw'] * 100:.1f}%", detail))
     if res.get("atr_pct") is not None:
         vr = res.get("vol_ratio")
         rows.append(("Typical move per bar (ATR 14)", f"{res['atr_pct'] * 100:.2f}%",
@@ -364,20 +383,21 @@ def readings(res):
     return rows
 
 
-def render(state, res, quote, alerts_log, owner):
+def render(state, res, quote, alerts_log, owner, ticker="ANT", name="Anthropic", ipo=None):
     key = state.get("confirmed") or res["state"]
-    emoji, name, meaning = STATES[key]
-    lines = [f"## {emoji} {TICKER} is **{name}**", ""]
+    emoji, label, meaning = STATES[key]
+    company = name
+    lines = [f"## {emoji} {company} ({ticker}) is **{label}**", ""]
     price = quote.get("price")
     bits = [f"**${price:.2f}**"] if price else []
     if quote.get("day_change") is not None:
         bits.append(f"{quote['day_change']:+.1f}% today")
-    if price and IPO_PRICE:
-        bits.append(f"{(price / IPO_PRICE - 1) * 100:+.1f}% vs IPO price ${IPO_PRICE:g}")
+    if price and ipo:
+        bits.append(f"{(price / ipo - 1) * 100:+.1f}% vs IPO price ${ipo:g}")
     lines.append(" · ".join(bits))
     lines.append(f"<sub>Updated {datetime.now(ET).strftime('%a %b %d, %H:%M ET')} · judged on "
                  f"{res['timeframe']} ({res['bars']} bars)"
-                 + (f" · {name} since {state['since']}" if state.get("since") else "") + "</sub>")
+                 + (f" · {label} since {state['since']}" if state.get("since") else "") + "</sub>")
     lines += ["", f"**What it means:** {meaning}", "", f"**For you (waiting to buy):** {FOR_YOU[key]}"]
     if state.get("pending") and state["pending"] != key:
         lines += ["", f"_Possibly changing to **{STATES[state['pending']][1]}** – waiting for one more check to confirm._"]
@@ -427,23 +447,27 @@ class GitHub:
         with urllib.request.urlopen(req, timeout=30) as r:
             return json.load(r)
 
-    def find_issue(self):
-        for it in self.call("GET", f"/issues?state=open&labels={LABEL}&per_page=10"):
+    def find_issue(self, symbol):
+        for it in self.call("GET", f"/issues?state=open&labels={LABEL},{ticker_label(symbol)}&per_page=10"):
             if "pull_request" not in it:
                 return it
         return None
 
 
+def ticker_label(symbol):
+    return f"ticker:{symbol}"
+
+
 # --------------------------------------------------------------------------- main
 
 
-def run(intraday, daily, prev_state):
+def run(intraday, daily, prev_state, ticker="ANT"):
     use_daily = len(daily["c"]) >= DAILY_SWITCH_BARS
     bars = daily if use_daily else intraday
     res = analyze(bars, *((20, 50) if use_daily else (9, 21)))
     res["timeframe"] = "daily bars" if use_daily else "15-minute bars"
     last_t = bars["t"][-1]
-    res["time"] = datetime.fromtimestamp(last_t, ET).strftime("%b %d %H:%M ET")
+    res["time"] = datetime.fromtimestamp(last_t, ET).strftime("%b %d" if use_daily else "%b %d %H:%M ET")
 
     meta = intraday.get("meta") or {}
     price = meta.get("regularMarketPrice") or intraday["c"][-1]
@@ -455,56 +479,52 @@ def run(intraday, daily, prev_state):
     if prev_state.get("fingerprint") == fingerprint:
         return None  # market closed / no new data – nothing to do
     today = datetime.fromtimestamp(last_t, ET).strftime("%Y-%m-%d")
-    state, alerts = step(prev_state, res, day_change, today)
+    state, alerts = step(prev_state, res, day_change, today, ticker)
     state["fingerprint"] = fingerprint
     return state, alerts, res, quote
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--dry-run", action="store_true", help="print the dashboard instead of updating GitHub")
-    ap.add_argument("--state-file", help="(dry-run) JSON file used to keep state between local runs")
-    args = ap.parse_args()
-
+def check(stock, gh, owner, dry_run=False, state_file=None):
+    """Check one stock: fetch, analyse, update its issue and post alerts."""
+    sym = stock["symbol"]
     try:
-        intraday = fetch_bars(TICKER, "15m", "60d")
-        daily = fetch_bars(TICKER, "1d", "2y")
+        intraday = fetch_bars(sym, "15m", "60d")
+        daily = fetch_bars(sym, "1d", "2y")
     except (urllib.error.URLError, ValueError, TimeoutError) as e:
-        print(f"Could not fetch price data, will try again next run: {e}")
-        return 0
+        print(f"{sym}: could not fetch price data, will try again next run: {e}")
+        return
 
-    owner = os.environ.get("GITHUB_REPOSITORY_OWNER", "")
-    gh, issue = None, None
-    if args.dry_run:
-        prev = json.load(open(args.state_file)) if args.state_file and os.path.exists(args.state_file) else {}
+    issue = None
+    if dry_run:
+        prev = json.load(open(state_file)).get(sym, {}) if state_file and os.path.exists(state_file) else {}
     else:
-        gh = GitHub(os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_TOKEN"])
-        issue = gh.find_issue()
+        issue = gh.find_issue(sym)
         prev = load_state(issue["body"]) if issue else {}
 
-    out = run(intraday, daily, prev)
+    out = run(intraday, daily, prev, sym)
     if out is None:
-        print("No new price data since last check (market closed?). Nothing to do.")
-        return 0
+        print(f"{sym}: no new price data since last check (market closed?). Nothing to do.")
+        return
     state, alerts, res, quote = out
     stamp = datetime.now(ET).strftime("%b %d %H:%M")
-    state["log"] = (state.get("log") or []) + [f"{stamp} – {a}" for a in alerts]
-    state["log"] = state["log"][-5:]
-    body = render(state, res, quote, state["log"], owner)
-    print(f"{TICKER}: candidate={res['state']} confirmed={state['confirmed']} alerts={len(alerts)}")
+    state["log"] = ((state.get("log") or []) + [f"{stamp} – {a}" for a in alerts])[-5:]
+    body = render(state, res, quote, state["log"], owner, sym, stock["name"], stock["ipo"])
+    print(f"{sym}: candidate={res['state']} confirmed={state['confirmed']} alerts={len(alerts)}")
 
-    if args.dry_run:
-        print("\n" + body)
+    if dry_run:
+        print("\n" + body + "\n")
         for a in alerts:
             print("ALERT:", a)
-        if args.state_file:
-            json.dump(state, open(args.state_file, "w"))
-        return 0
+        if state_file:
+            allstate = json.load(open(state_file)) if os.path.exists(state_file) else {}
+            allstate[sym] = state
+            json.dump(allstate, open(state_file, "w"))
+        return
 
-    title = f"📊 {TICKER} Watch – live status"
     if issue is None:
-        issue = gh.call("POST", "/issues", {"title": title, "body": body, "labels": [LABEL]})
-        print(f"Created dashboard issue #{issue['number']}")
+        title = f"📊 {stock['name']} ({sym}) – live status"
+        issue = gh.call("POST", "/issues", {"title": title, "body": body, "labels": [LABEL, ticker_label(sym)]})
+        print(f"{sym}: created dashboard issue #{issue['number']}")
     else:
         gh.call("PATCH", f"/issues/{issue['number']}", {"body": body})
     if alerts:
@@ -513,8 +533,25 @@ def main():
         if owner:
             text += f"\n\n@{owner}"
         gh.call("POST", f"/issues/{issue['number']}/comments", {"body": text})
-        print(f"Posted {len(alerts)} alert(s)")
-    return 0
+        print(f"{sym}: posted {len(alerts)} alert(s)")
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--dry-run", action="store_true", help="print the dashboards instead of updating GitHub")
+    ap.add_argument("--state-file", help="(dry-run) JSON file used to keep state between local runs")
+    args = ap.parse_args()
+
+    owner = os.environ.get("GITHUB_REPOSITORY_OWNER", "")
+    gh = None if args.dry_run else GitHub(os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_TOKEN"])
+    failed = 0
+    for stock in parse_watchlist(WATCHLIST):
+        try:
+            check(stock, gh, owner, args.dry_run, args.state_file)
+        except Exception as e:  # one stock failing must not stop the others
+            failed += 1
+            print(f"{stock['symbol']}: error: {e}")
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

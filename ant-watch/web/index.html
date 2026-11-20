@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>ANT Watch</title>
-<meta name="description" content="Is Anthropic stock (ANT) rising, falling, stable or volatile right now?">
+<title>Stock Watch</title>
+<meta name="description" content="Are Anthropic, NVIDIA and SpaceX stock rising, falling, stable or volatile right now?">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0b0b'/%3E%3Cpath d='M6 22l6-7 5 4 9-10' stroke='%23fff' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
 :root {
@@ -78,9 +78,25 @@ details ul { padding-left: 18px; margin: 10px 0 0; }
 .foot { color: var(--muted); font-size: 13px; text-align: center; margin-top: 24px; }
 .foot a { color: var(--ink-2); }
 .err { color: var(--down); }
+.watch { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+.watch-item { text-align: left; font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--ring); border-radius: 12px;
+  padding: 12px 14px; cursor: pointer; display: grid; gap: 2px; min-width: 0; }
+.watch-item:hover { border-color: var(--axis); }
+.watch-item[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.w-name { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.w-name span { color: var(--muted); font-weight: 400; }
+.w-price { font-size: 17px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.w-price .delta { font-size: 13px; }
+.w-state { font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+.w-state i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; vertical-align: 0; }
 .skeleton { color: var(--muted); padding: 40px 0; text-align: center; }
 @media (max-width: 560px) {
   .price { font-size: 36px; }
+  .watch { gap: 6px; }
+  .watch-item { padding: 10px; }
+  .w-name span { display: none; }
+  .w-price { font-size: 15px; }
+  .w-price .delta { display: block; }
   .card { padding: 16px; }
   #signals tr { display: grid; grid-template-columns: 1fr auto; column-gap: 12px; border-top: 1px solid var(--grid); padding: 8px 0; }
   #signals td { border-top: 0; padding: 0; }
@@ -91,9 +107,11 @@ details ul { padding-left: 18px; margin: 10px 0 0; }
 <body>
 <main>
   <header>
-    <h1>ANT Watch <span>· Anthropic, Nasdaq: ANT</span></h1>
+    <h1>Stock Watch <span>· Anthropic, NVIDIA, SpaceX</span></h1>
     <div class="fresh" id="fresh">Loading…</div>
   </header>
+
+  <nav class="watch" id="watchlist" aria-label="Watchlist"></nav>
 
   <section class="card hero" id="hero"><div class="skeleton">Fetching the latest prices…</div></section>
 
@@ -134,7 +152,7 @@ details ul { padding-left: 18px; margin: 10px 0 0; }
     </details>
   </section>
 
-  <p class="foot">Alerts come from the <a href="https://github.com/Thonbo/Utils/issues?q=is%3Aissue+label%3Aant-watch" rel="noopener">GitHub dashboard issue</a>. Prices are from Yahoo Finance and can be delayed by up to 15 minutes.<br>
+  <p class="foot">Each stock has its own <a href="https://github.com/Thonbo/Utils/issues?q=is%3Aissue+label%3Astock-watch" rel="noopener">GitHub dashboard issue</a>, which sends the alerts. Prices are from Yahoo Finance and can be delayed by up to 15 minutes.<br>
   Indicators describe the past, not the future. This is not financial advice.</p>
 </main>
 <script type="module" src="app.js"></script>

@@ -1,4 +1,4 @@
-name: ANT Watch
+name: Stock Watch
 
 on:
   schedule:
@@ -20,9 +20,9 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Check the stock and update the dashboard issue
+      - name: Check each stock and update its dashboard issue
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TICKER: ANT
-          IPO_PRICE: "83"
+          # SYMBOL:Name[:IPO price], comma-separated. Must match WATCHLIST in ant-watch/web/app.js.
+          WATCHLIST: "ANT:Anthropic:83,NVDA:NVIDIA,SPCX:SpaceX:135"
         run: python3 ant-watch/ant_watch.py

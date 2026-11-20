@@ -1,6 +1,11 @@
 import { analyze } from "./analysis.js";
 
-const IPO_PRICE = 83;
+// Keep in sync with WATCHLIST in .github/workflows/ant-watch.yml and ALLOWED in netlify/functions/chart.mts.
+const WATCHLIST = [
+  { symbol: "ANT", name: "Anthropic", ipo: 83 },
+  { symbol: "NVDA", name: "NVIDIA" },
+  { symbol: "SPCX", name: "SpaceX", ipo: 135 },
+];
 const REFRESH_MS = 60_000;
 const NS = "http://www.w3.org/2000/svg";
 
@@ -33,7 +38,9 @@ const money = (x) => `$${x.toFixed(2)}`;
 const pct = (x) => `${x >= 0 ? "+" : "−"}${Math.abs(x).toFixed(1)}%`;
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
-let data = null, model = null, range = null, hoverIdx = null;
+const cache = {}; // symbol -> { data, model, error }
+let current = WATCHLIST[0].symbol, data = null, model = null, range = null, hoverIdx = null;
+const cfg = () => WATCHLIST.find((w) => w.symbol === current);
 
 function icon(state) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${STATES[state].icon}</svg>`;
@@ -53,7 +60,7 @@ function renderHero() {
   while (start > 0 && rows[start - 1].confirmed === key) start--;
   const d = data.daily.c;
   const dayChange = d.length >= 2 ? (data.price / d.at(-2) - 1) * 100 : null;
-  const vsIpo = (data.price / IPO_PRICE - 1) * 100;
+  const ipo = cfg().ipo;
 
   const hero = $("hero");
   hero.innerHTML = "";
@@ -61,20 +68,21 @@ function renderHero() {
   badge.className = "badge";
   badge.style.setProperty("--c", `var(${s.color})`);
   badge.innerHTML = icon(key);
-  badge.append(`ANT is ${s.label}`);
+  badge.append(`${cfg().name} is ${s.label}`);
   hero.append(badge);
 
   const pr = document.createElement("div");
   pr.className = "price-row";
   pr.innerHTML = `<span class="price">${money(data.price)}</span>` +
     (dayChange != null ? `<span class="delta ${dayChange >= 0 ? "up" : "down"}">${dayChange >= 0 ? "▲" : "▼"} ${pct(dayChange)} today</span>` : "") +
-    `<span class="sub">${pct(vsIpo)} vs IPO price $${IPO_PRICE}</span>`;
+    (ipo ? `<span class="sub">${pct((data.price / ipo - 1) * 100)} vs IPO price $${ipo}</span>` : "") +
+    `<span class="sub">Nasdaq: ${current}</span>`;
   hero.append(pr);
 
   const adv = document.createElement("div");
   adv.className = "advice";
   adv.innerHTML = `<p><b>What it means:</b> ${s.meaning}</p><p><b>For you (waiting to buy):</b> ${s.you}</p>` +
-    (key !== "WARMING_UP" ? `<p class="sub">${s.label} since ${fmtTime.format(rows[start].t * 1000)} ET · judged on ${model.timeframe}</p>` : "") +
+    (key !== "WARMING_UP" ? `<p class="sub">${s.label} since ${model.useDaily ? fmtDay.format(rows[start].t * 1000) : fmtTime.format(rows[start].t * 1000) + " ET"} · judged on ${model.timeframe}</p>` : "") +
     (last.pending && last.pending !== key ? `<p class="pending">This may be turning ${STATES[last.pending].label}. It needs one more bar to confirm.</p>` : "");
   hero.append(adv);
 }
@@ -91,7 +99,7 @@ function renderSignals() {
     r.emaFast > r.emaSlow ? "The short-term average is above the longer-term one (up)." : "The short-term average is below the longer-term one (down)."]);
   if (r.bbw != null) {
     const w = r.bbwRank <= 0.35 ? "Narrow, a squeeze" : r.bbwRank >= 0.8 ? "Wide" : "Average";
-    out.push(["Bollinger Band width (20, 2)", `${(r.bbw * 100).toFixed(1)}%`, `${w}. ${r.bbwRank >= 0.5 ? `Wider than ${Math.round(r.bbwRank * 100)}%` : `Narrower than ${Math.round(100 - r.bbwRank * 100)}%`} of recent history.`]);
+    out.push(["Bollinger Band width (20, 2)", `${(r.bbw * 100).toFixed(1)}%`, `${w}. ${bandText(r.bbwRank)}`]);
   }
   if (r.atrPct != null) out.push(["Typical move per bar (ATR 14)", `${(r.atrPct * 100).toFixed(2)}%`, r.volRatio ? `${r.volRatio.toFixed(1)}× its usual size.` : ""]);
   if (r.rsi != null) {
@@ -107,6 +115,12 @@ function renderSignals() {
     const n = tr.insertCell(); n.className = "num"; n.textContent = b;
     const rd = tr.insertCell(); rd.className = "read"; rd.textContent = c;
   }
+}
+
+function bandText(rank) {
+  if (rank >= 0.99) return "The widest in recent history.";
+  if (rank <= 0.01) return "The narrowest in recent history.";
+  return rank >= 0.5 ? `Wider than ${Math.round(rank * 100)}% of recent history.` : `Narrower than ${Math.round(100 - rank * 100)}% of recent history.`;
 }
 
 // ------------------------------------------------------------------ ranges
@@ -253,7 +267,7 @@ function renderChart() {
     show(Math.max(0, Math.min(n - 1, (hoverIdx ?? n - 1) + (ev.key === "ArrowLeft" ? -1 : 1))));
   };
   svg.onblur = hide;
-  svg.setAttribute("aria-label", `ANT price over ${range}: ${money(rows[0].close)} to ${money(rows[n - 1].close)}. Current state ${STATES[rows[n - 1].confirmed ?? "WARMING_UP"].label}.`);
+  svg.setAttribute("aria-label", `${cfg().name} price over ${range}: ${money(rows[0].close)} to ${money(rows[n - 1].close)}. Current state ${STATES[rows[n - 1].confirmed ?? "WARMING_UP"].label}.`);
 
   // state key + table
   const used = [...new Set(rows.map((r) => r.confirmed ?? "WARMING_UP"))];
@@ -285,27 +299,91 @@ function niceStep(raw) {
   return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * p;
 }
 
+// ------------------------------------------------------------------ watchlist
+function dayChange(d) {
+  return d.daily.c.length >= 2 ? (d.price / d.daily.c.at(-2) - 1) * 100 : null;
+}
+function renderWatchlist() {
+  const nav = $("watchlist");
+  nav.innerHTML = "";
+  for (const w of WATCHLIST) {
+    const entry = cache[w.symbol];
+    const b = document.createElement("button");
+    b.className = "watch-item";
+    b.setAttribute("aria-pressed", String(w.symbol === current));
+    const top = document.createElement("div"); top.className = "w-name";
+    top.textContent = w.name;
+    const sym = document.createElement("span"); sym.textContent = ` ${w.symbol}`; top.append(sym);
+    const price = document.createElement("div"); price.className = "w-price";
+    const st = document.createElement("div"); st.className = "w-state";
+    if (entry?.data) {
+      const dc = dayChange(entry.data);
+      price.textContent = money(entry.data.price);
+      if (dc != null) { const d = document.createElement("span"); d.className = `delta ${dc >= 0 ? "up" : "down"}`; d.textContent = ` ${pct(dc)}`; price.append(d); }
+      const r = entry.model.rows.at(-1), key = r.confirmed ?? r.state;
+      st.innerHTML = `<i style="background:var(${STATES[key].color})"></i>`;
+      st.append(STATES[key].label);
+    } else {
+      price.textContent = entry?.error ? "Unavailable" : "…";
+    }
+    b.append(top, price, st);
+    b.onclick = () => select(w.symbol);
+    nav.append(b);
+  }
+}
+function select(symbol) {
+  current = symbol;
+  try { localStorage.setItem("stockwatch-symbol", symbol); } catch {}
+  if (location.hash !== `#${symbol}`) history.replaceState(null, "", `#${symbol}`);
+  renderWatchlist();
+  renderCurrent();
+}
+function renderCurrent() {
+  const entry = cache[current];
+  if (!entry?.data) {
+    $("hero").innerHTML = '<p class="err"></p>';
+    $("hero").firstChild.textContent = entry?.error ? `Couldn't load prices: ${entry.error}. It will try again in a minute.` : "Fetching the latest prices…";
+    return;
+  }
+  ({ data, model } = entry);
+  hoverIdx = null;
+  renderHero(); renderRanges(); renderSignals(); renderChart();
+  $("fresh").textContent = `Last trade ${fmtTime.format(data.marketTime * 1000)} ET · refreshes every minute`;
+}
+
 // ------------------------------------------------------------------ load
-async function load() {
+async function fetchOne(symbol) {
   try {
-    const res = await fetch("/api/chart", { cache: "no-store" });
+    const res = await fetch(`/api/chart?symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" });
     const json = await res.json();
     if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
     if (!json.intraday?.c?.length) throw new Error("no price data returned yet");
-    data = json;
-    model = analyze(data.intraday, data.daily);
-    renderHero(); renderRanges(); renderSignals(); renderChart();
-    $("fresh").textContent = `Last trade ${fmtTime.format(data.marketTime * 1000)} ET · refreshes every minute`;
+    cache[symbol] = { data: json, model: analyze(json.intraday, json.daily) };
   } catch (e) {
-    if (data) $("fresh").textContent = `Couldn't refresh (${e.message}). Showing ${fmtTime.format(data.marketTime * 1000)} ET.`;
-    else $("hero").innerHTML = `<p class="err"></p>`, ($("hero").firstChild.textContent = `Couldn't load prices: ${e.message}. It will try again in a minute.`), ($("fresh").textContent = "");
+    if (cache[symbol]?.data) cache[symbol].stale = e.message; // keep showing the last good data
+    else cache[symbol] = { error: e.message };
   }
 }
+async function load() {
+  // The selected stock first, so its view appears quickly; then the rest.
+  await fetchOne(current);
+  renderWatchlist(); renderCurrent();
+  await Promise.all(WATCHLIST.filter((w) => w.symbol !== current).map((w) => fetchOne(w.symbol)));
+  renderWatchlist();
+  if (cache[current]?.stale) $("fresh").textContent = `Couldn't refresh (${cache[current].stale}). Showing ${fmtTime.format(data.marketTime * 1000)} ET.`;
+}
 
-try { range = localStorage.getItem("antwatch-range"); } catch {}
+{
+  const fromHash = location.hash.slice(1).toUpperCase();
+  let saved = null;
+  try { range = localStorage.getItem("antwatch-range"); saved = localStorage.getItem("stockwatch-symbol"); } catch {}
+  current = [fromHash, saved].find((s) => WATCHLIST.some((w) => w.symbol === s)) ?? WATCHLIST[0].symbol;
+}
+renderWatchlist();
 load();
 setInterval(() => { if (!document.hidden) load(); }, REFRESH_MS);
 document.addEventListener("visibilitychange", () => { if (!document.hidden && data && Date.now() - data.fetchedAt > REFRESH_MS) load(); });
+window.addEventListener("hashchange", () => { const s = location.hash.slice(1).toUpperCase(); if (WATCHLIST.some((w) => w.symbol === s) && s !== current) select(s); });
 let rt;
 window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => model && renderChart(), 100); });
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => model && renderChart());

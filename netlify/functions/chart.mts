@@ -1,15 +1,16 @@
 // Fetches price bars from Yahoo Finance on the server (browsers are blocked by CORS)
 // and returns a compact JSON payload for the ANT Watch page.
-const TICKER = "ANT";
+// Only these symbols can be requested (keep in sync with WATCHLIST in ant-watch/web/app.js).
+const ALLOWED = new Set(["ANT", "NVDA", "SPCX"]);
 const HOSTS = ["query1.finance.yahoo.com", "query2.finance.yahoo.com"];
 
 type Bars = { t: number[]; o: number[]; h: number[]; l: number[]; c: number[]; v: number[] };
 
-async function fetchBars(interval: string, range: string) {
+async function fetchBars(symbol: string, interval: string, range: string) {
   let lastErr: unknown;
   for (const host of HOSTS) {
     try {
-      const url = `https://${host}/v8/finance/chart/${TICKER}?interval=${interval}&range=${range}&includePrePost=false`;
+      const url = `https://${host}/v8/finance/chart/${symbol}?interval=${interval}&range=${range}&includePrePost=false`;
       const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (ant-watch)" } });
       if (!res.ok) throw new Error(`${host} answered ${res.status}`);
       const json: any = await res.json();
@@ -30,13 +31,15 @@ async function fetchBars(interval: string, range: string) {
   throw lastErr;
 }
 
-export default async () => {
+export default async (req: Request) => {
+  const symbol = (new URL(req.url).searchParams.get("symbol") ?? "ANT").toUpperCase();
+  if (!ALLOWED.has(symbol)) return Response.json({ error: `Unknown symbol ${symbol}` }, { status: 400 });
   try {
-    const [intra, daily] = await Promise.all([fetchBars("15m", "60d"), fetchBars("1d", "2y")]);
+    const [intra, daily] = await Promise.all([fetchBars(symbol, "15m", "60d"), fetchBars(symbol, "1d", "2y")]);
     const m = intra.meta;
     return Response.json(
       {
-        ticker: TICKER,
+        ticker: symbol,
         price: m.regularMarketPrice ?? intra.bars.c.at(-1),
         marketTime: m.regularMarketTime ?? intra.bars.t.at(-1),
         intraday: intra.bars,
