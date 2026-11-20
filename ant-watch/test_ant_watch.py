@@ -13,7 +13,7 @@ def make_bars(closes, noise=0.002, seed=1):
     for i, c in enumerate(closes):
         spread = abs(c) * noise
         o = prev
-        b["t"].append(1_700_000_000 + i * 1800)
+        b["t"].append(1_700_000_000 + i * 900)
         b["o"].append(o)
         b["h"].append(max(o, c) + spread * rnd.random())
         b["l"].append(min(o, c) - spread * rnd.random())
@@ -105,7 +105,7 @@ class EndToEnd(unittest.TestCase):
         rnd = random.Random(6)
         closes = [97 + rnd.uniform(-1, 1) for _ in range(50)]
         b = make_bars(closes)
-        payload = {"chart": {"result": [{"meta": {"regularMarketPrice": closes[-1]}, "timestamp": b["t"] + [b["t"][-1] + 1800],
+        payload = {"chart": {"result": [{"meta": {"regularMarketPrice": closes[-1]}, "timestamp": b["t"] + [b["t"][-1] + 900],
                    "indicators": {"quote": [{"open": b["o"] + [None], "high": b["h"] + [None], "low": b["l"] + [None],
                                              "close": b["c"] + [None], "volume": b["v"] + [None]}]}}]}}
         intraday = aw.parse_chart(payload)

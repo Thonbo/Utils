@@ -2,8 +2,8 @@ name: ANT Watch
 
 on:
   schedule:
-    # Every 30 min, Mon-Fri, 13:00-21:59 UTC (covers US market hours in both summer and winter time).
-    - cron: "*/30 13-21 * * 1-5"
+    # Every 15 min, Mon-Fri, 13:00-21:59 UTC (covers US market hours in both summer and winter time).
+    - cron: "*/15 13-21 * * 1-5"
   workflow_dispatch: {} # lets you run it by hand from the Actions tab
 
 permissions:

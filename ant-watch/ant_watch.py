@@ -396,10 +396,10 @@ def render(state, res, quote, alerts_log, owner):
               "- A new state must show up on **2 checks in a row** before you're notified (avoids flip-flopping).",
               "- Extra alerts: RSI crossing 70/30, and moves of ±"
               f"{BIG_MOVE_PCT:g}% in a day.",
-              "- Uses 30-minute bars while the stock is new; switches to daily bars after "
+              "- Uses 15-minute bars while the stock is new; switches to daily bars after "
               f"{DAILY_SWITCH_BARS} trading days.",
               "", "</details>", "",
-              f"<sub>Checks every 30 min during US market hours. You get a notification when a comment is added to this "
+              f"<sub>Checks every 15 min during US market hours. You get a notification when a comment is added to this "
               f"issue{f' (cc @{owner})' if owner else ''}. Technical indicators describe the past, not the future – "
               "this is not financial advice.</sub>"]
     lines += ["", f"<!-- {STATE_MARK}: {json.dumps(state, separators=(',', ':'))} -->"]
@@ -441,7 +441,7 @@ def run(intraday, daily, prev_state):
     use_daily = len(daily["c"]) >= DAILY_SWITCH_BARS
     bars = daily if use_daily else intraday
     res = analyze(bars, *((20, 50) if use_daily else (9, 21)))
-    res["timeframe"] = "daily bars" if use_daily else "30-minute bars"
+    res["timeframe"] = "daily bars" if use_daily else "15-minute bars"
     last_t = bars["t"][-1]
     res["time"] = datetime.fromtimestamp(last_t, ET).strftime("%b %d %H:%M ET")
 
@@ -467,7 +467,7 @@ def main():
     args = ap.parse_args()
 
     try:
-        intraday = fetch_bars(TICKER, "30m", "60d")
+        intraday = fetch_bars(TICKER, "15m", "60d")
         daily = fetch_bars(TICKER, "1d", "2y")
     except (urllib.error.URLError, ValueError, TimeoutError) as e:
         print(f"Could not fetch price data, will try again next run: {e}")
