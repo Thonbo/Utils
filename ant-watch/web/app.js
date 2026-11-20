@@ -80,6 +80,8 @@ const LUCIDE = {
   "pencil": '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
   "trash-2": '<path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
   "x": '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  "chevron-down": '<path d="m6 9 6 6 6-6"/>',
+  "chevron-up": '<path d="m18 15-6-6-6 6"/>',
   "external-link": '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
 };
 function lucide(name, size = 16) {
@@ -622,23 +624,34 @@ function renderAbout() {
   box.hidden = false;
   const draw = (p) => {
     if (sym !== current) return;
+    // Minimizable; the choice is remembered in this browser for all stocks.
+    const collapsed = store.get("stockwise-about-collapsed") === "1";
     box.innerHTML = "";
-    box.append(h("h2", null, `About ${cfg().name}`));
+    box.classList.toggle("collapsed", collapsed);
+    const head = h("button", "about-head");
+    head.setAttribute("aria-expanded", String(!collapsed));
+    head.append(h("h2", null, `About ${cfg().name}`));
+    head.insertAdjacentHTML("beforeend", lucide(collapsed ? "chevron-down" : "chevron-up", 20));
+    head.onclick = () => { store.set("stockwise-about-collapsed", collapsed ? "0" : "1"); draw(p); };
+    const body = h("div", "about-body");
+    body.id = "about-body";
+    head.setAttribute("aria-controls", "about-body");
+    box.append(head, body);
     const ind = [p?.sector, p?.industry].filter(Boolean).join(" · ");
-    if (ind) box.append(h("p", "industry", ind));
+    if (ind) body.append(h("p", "industry", ind));
     if (p?.wiki?.text) {
-      box.append(h("p", "text", p.wiki.text));
+      body.append(h("p", "text", p.wiki.text));
       if (p.wiki.url) {
         const a = h("a");
         a.href = p.wiki.url; a.target = "_blank"; a.rel = "noopener";
         a.append("Read more on Wikipedia");
         a.insertAdjacentHTML("beforeend", lucide("external-link", 14));
-        box.append(a);
+        body.append(a);
       }
     } else if (p) {
-      box.append(h("p", "muted", "No company description found."));
+      body.append(h("p", "muted", "No company description found."));
     } else {
-      box.append(h("p", "muted", "Looking up the company…"));
+      body.append(h("p", "muted", "Looking up the company…"));
     }
   };
   const known = profiles[sym];

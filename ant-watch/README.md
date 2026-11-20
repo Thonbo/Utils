@@ -47,7 +47,7 @@ Your list is saved **in your browser** (local storage), with no account or passw
 
 ## About the company
 
-Under the price, each stock shows its **sector and industry** (from Yahoo) and a **short description** (the first three sentences of its Wikipedia article), with a link to read more. This works for any stock you add. Your browser fetches the description straight from Wikipedia and keeps it for a week. If no matching article is found, it says so.
+Under the chart, each stock shows its **sector and industry** (from Yahoo) and a **short description** (the first three sentences of its Wikipedia article), with a link to read more. Tap the heading to minimize it; the page remembers your choice. This works for any stock you add. Your browser fetches the description straight from Wikipedia and keeps it for a week. If no matching article is found, it says so.
 
 ## Time ranges
 

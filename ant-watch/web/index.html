@@ -81,7 +81,10 @@ th { color: var(--ink-2); font-weight: 500; font-size: 12px; border-top: 0; }
 td.num { font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; }
 td.read { color: var(--ink-2); }
 details { font-size: 14px; color: var(--ink-2); }
-details summary { cursor: pointer; color: var(--ink); font-weight: 500; }
+details summary { cursor: pointer; color: var(--ink); font-weight: 500; list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+details summary::-webkit-details-marker { display: none; }
+details summary .chev { color: var(--ink-2); flex: none; transition: transform .15s; }
+details[open] summary .chev { transform: rotate(180deg); }
 details ul { padding-left: 18px; margin: 10px 0 0; }
 .foot { color: var(--muted); font-size: 13px; text-align: center; margin-top: 24px; }
 .foot a { color: var(--ink-2); }
@@ -108,7 +111,12 @@ details ul { padding-left: 18px; margin: 10px 0 0; }
 .results .muted, .muted { color: var(--muted); }
 .results li.muted, .results li.err { padding: 10px 4px; }
 .about[hidden] { display: none; }
-.about h2 { margin-bottom: 6px; }
+.about-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; background: none; border: 0; padding: 0;
+  font: inherit; color: inherit; cursor: pointer; text-align: left; }
+.about-head h2 { margin: 0; }
+.about-head svg { color: var(--ink-2); flex: none; }
+.about-body { margin-top: 8px; }
+.about.collapsed .about-body { display: none; }
 .about .industry { font-size: 13px; color: var(--ink-2); margin: 0 0 8px; }
 .about p.text { margin: 0 0 8px; }
 .about a { color: var(--ink-2); font-size: 13px; display: inline-flex; align-items: center; gap: 4px; }
@@ -182,8 +190,6 @@ details ul { padding-left: 18px; margin: 10px 0 0; }
 
   <section class="card hero" id="hero"><div class="skeleton">Fetching the latest prices…</div></section>
 
-  <section class="card about" id="about" hidden></section>
-
   <section class="card">
     <div class="toolbar">
       <div class="seg" id="ranges" role="group" aria-label="Time range"></div>
@@ -198,8 +204,10 @@ details ul { padding-left: 18px; margin: 10px 0 0; }
       <div class="tip" id="tip" role="status"></div>
     </div>
     <div class="states" id="state-key"></div>
-    <details style="margin-top:12px"><summary>View as table</summary><div id="data-table" style="margin-top:8px;max-height:320px;overflow:auto"></div></details>
+    <details style="margin-top:12px"><summary>View as table<!-- Lucide "chevron-down" --><svg class="chev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary><div id="data-table" style="margin-top:8px;max-height:320px;overflow:auto"></div></details>
   </section>
+
+  <section class="card about" id="about" hidden></section>
 
   <section class="card">
     <h2>Signals</h2>
@@ -208,7 +216,7 @@ details ul { padding-left: 18px; margin: 10px 0 0; }
 
   <section class="card">
     <details>
-      <summary>How the states are decided</summary>
+      <summary>How the states are decided<!-- Lucide "chevron-down" --><svg class="chev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></summary>
       <ul>
         <li><b>Rising</b>: trend strength (ADX) ≥ 25, buyers ahead (+DI above −DI), price above the trend line and the fast EMA above the slow EMA.</li>
         <li><b>Falling</b>: the mirror image of Rising.</li>
