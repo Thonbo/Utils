@@ -113,7 +113,18 @@ function renderHero() {
   badge.style.setProperty("--c", `var(${s.color})`);
   badge.innerHTML = icon(key);
   badge.append(`${cfg().name} is ${s.label}`);
-  hero.append(badge);
+  const top = h("div", "hero-top");
+  top.append(badge);
+  // Delete bubble (Lucide "trash-2"), hidden when this is the only stock switched on.
+  if (active().length > 1) {
+    const del = h("button", "bubble-btn");
+    del.innerHTML = lucide("trash-2", 18);
+    del.setAttribute("aria-label", `Delete ${cfg().name} from your list`);
+    del.title = `Delete ${cfg().name} from your list`;
+    del.onclick = () => removeStock(current);
+    top.append(del);
+  }
+  hero.append(top);
 
   const pr = h("div", "price-row");
   pr.innerHTML = `<span class="price">${money(data.price)}</span>` +

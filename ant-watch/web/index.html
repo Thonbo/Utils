@@ -36,6 +36,11 @@ h1 span { color: var(--ink-2); font-weight: 400; }
 .fresh { color: var(--muted); font-size: 13px; }
 .card { background: var(--surface); border: 1px solid var(--ring); border-radius: 14px; padding: 20px; margin-bottom: 16px; }
 .hero { display: grid; gap: 14px; }
+.hero-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.bubble-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: 50%;
+  border: 1px solid var(--ring); background: var(--wash); color: var(--ink-2); cursor: pointer; }
+.bubble-btn:hover { color: var(--down); border-color: color-mix(in srgb, var(--down) 45%, transparent); background: color-mix(in srgb, var(--down) 10%, transparent); }
+.bubble-btn:focus-visible { outline: 2px solid var(--s-stable); outline-offset: 2px; }
 .badge { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 10px; border-radius: 999px; font-weight: 600; font-size: 15px;
   background: color-mix(in srgb, var(--c) 14%, transparent); border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); width: fit-content; }
 .badge svg { width: 18px; height: 18px; color: var(--c); }
