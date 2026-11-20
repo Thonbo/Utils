@@ -1,0 +1,3 @@
+[build]
+  publish = "ant-watch/web"
+  functions = "netlify/functions"

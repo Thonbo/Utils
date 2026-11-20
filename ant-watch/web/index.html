@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ANT Watch</title>
+<meta name="description" content="Is Anthropic stock (ANT) rising, falling, stable or volatile right now?">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0b0b'/%3E%3Cpath d='M6 22l6-7 5 4 9-10' stroke='%23fff' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+:root {
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,.10); --wash: rgba(11,11,11,.06);
+  --up: #006300; --down: #b42f2f;
+  --s-rising: #0ca30c; --s-falling: #d03b3b; --s-volatile: #fab219; --s-stable: #2a78d6; --s-normal: #898781; --s-warm: #c3c2b7;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,.10); --wash: rgba(255,255,255,.07);
+    --up: #0ca30c; --down: #e66767; --s-stable: #3987e5; --s-warm: #383835; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,.10); --wash: rgba(255,255,255,.07);
+  --up: #0ca30c; --down: #e66767; --s-stable: #3987e5; --s-warm: #383835; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+main { max-width: 880px; margin: 0 auto; padding: 24px 16px 48px; }
+header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .01em; }
+h1 span { color: var(--ink-2); font-weight: 400; }
+.fresh { color: var(--muted); font-size: 13px; }
+.card { background: var(--surface); border: 1px solid var(--ring); border-radius: 14px; padding: 20px; margin-bottom: 16px; }
+.hero { display: grid; gap: 14px; }
+.badge { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px 6px 10px; border-radius: 999px; font-weight: 600; font-size: 15px;
+  background: color-mix(in srgb, var(--c) 14%, transparent); border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); width: fit-content; }
+.badge svg { width: 18px; height: 18px; color: var(--c); }
+.price-row { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.price { font-size: 44px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.delta { font-variant-numeric: tabular-nums; font-weight: 600; }
+.delta.up { color: var(--up); } .delta.down { color: var(--down); }
+.sub { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.advice { display: grid; gap: 6px; }
+.advice p { margin: 0; }
+.advice b { font-weight: 600; }
+.pending { color: var(--ink-2); font-style: italic; font-size: 14px; }
+.toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.seg { display: inline-flex; background: var(--wash); border-radius: 9px; padding: 3px; }
+.seg button { border: 0; background: transparent; color: var(--ink-2); font: inherit; font-size: 13px; padding: 4px 12px; border-radius: 7px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 0 0 1px var(--ring); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--ink-2); }
+.legend i { display: inline-block; vertical-align: middle; margin-right: 6px; }
+.key-line { width: 14px; height: 2px; background: var(--ink); border-radius: 1px; }
+.key-ema { width: 14px; height: 0; border-top: 2px dashed var(--muted); }
+.key-band { width: 14px; height: 10px; background: var(--wash); border: 1px solid var(--grid); border-radius: 2px; }
+.chart-wrap { position: relative; }
+svg.chart { display: block; width: 100%; height: auto; touch-action: pan-y; }
+.chart text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.tip { position: absolute; pointer-events: none; background: var(--surface); border: 1px solid var(--ring); border-radius: 10px; padding: 8px 10px;
+  font-size: 13px; box-shadow: 0 6px 20px rgba(0,0,0,.12); min-width: 150px; opacity: 0; transition: opacity .1s; }
+.tip .v { font-weight: 650; font-size: 15px; font-variant-numeric: tabular-nums; }
+.tip .l { color: var(--ink-2); }
+.tip .row { display: flex; justify-content: space-between; gap: 12px; }
+.states { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--ink-2); margin-top: 8px; }
+.states i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-2); margin: 0 0 10px; font-weight: 600; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+td, th { text-align: left; padding: 9px 8px 9px 0; border-top: 1px solid var(--grid); vertical-align: top; }
+th { color: var(--ink-2); font-weight: 500; font-size: 12px; border-top: 0; }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; }
+td.read { color: var(--ink-2); }
+details { font-size: 14px; color: var(--ink-2); }
+details summary { cursor: pointer; color: var(--ink); font-weight: 500; }
+details ul { padding-left: 18px; margin: 10px 0 0; }
+.foot { color: var(--muted); font-size: 13px; text-align: center; margin-top: 24px; }
+.foot a { color: var(--ink-2); }
+.err { color: var(--down); }
+.skeleton { color: var(--muted); padding: 40px 0; text-align: center; }
+@media (max-width: 560px) {
+  .price { font-size: 36px; }
+  .card { padding: 16px; }
+  #signals tr { display: grid; grid-template-columns: 1fr auto; column-gap: 12px; border-top: 1px solid var(--grid); padding: 8px 0; }
+  #signals td { border-top: 0; padding: 0; }
+  #signals td.read { grid-column: 1 / -1; font-size: 13px; }
+}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>ANT Watch <span>· Anthropic, Nasdaq: ANT</span></h1>
+    <div class="fresh" id="fresh">Loading…</div>
+  </header>
+
+  <section class="card hero" id="hero"><div class="skeleton">Fetching the latest prices…</div></section>
+
+  <section class="card">
+    <div class="toolbar">
+      <div class="seg" id="ranges" role="group" aria-label="Time range"></div>
+      <div class="legend" aria-hidden="true">
+        <span><i class="key-line"></i>Price</span>
+        <span><i class="key-ema"></i><span id="ema-label">Trend line (EMA 21)</span></span>
+        <span><i class="key-band"></i>Normal range (Bollinger)</span>
+      </div>
+    </div>
+    <div class="chart-wrap" id="chart-wrap">
+      <svg class="chart" id="chart" role="img" aria-label="Price chart with state history"></svg>
+      <div class="tip" id="tip" role="status"></div>
+    </div>
+    <div class="states" id="state-key"></div>
+    <details style="margin-top:12px"><summary>View as table</summary><div id="data-table" style="margin-top:8px;max-height:320px;overflow:auto"></div></details>
+  </section>
+
+  <section class="card">
+    <h2>Signals</h2>
+    <table id="signals"></table>
+  </section>
+
+  <section class="card">
+    <details>
+      <summary>How the states are decided</summary>
+      <ul>
+        <li><b>Rising</b>: trend strength (ADX) ≥ 25, buyers ahead (+DI above −DI), price above the trend line and the fast EMA above the slow EMA.</li>
+        <li><b>Falling</b>: the mirror image of Rising.</li>
+        <li><b>Volatile</b>: no clear trend, and the Bollinger band is wider than 80% of recent history, or the typical move (ATR) is at least 1.5× its usual size.</li>
+        <li><b>Stable</b>: ADX under 20, Bollinger band narrower than 65% of recent history and ATR not elevated.</li>
+        <li><b>Normal</b>: everything else.</li>
+        <li>A new state has to show up on 2 bars in a row before it counts, which stops it flip-flopping.</li>
+        <li>It uses 15-minute bars while the stock is new, then switches to daily bars after 60 trading days.</li>
+      </ul>
+    </details>
+  </section>
+
+  <p class="foot">Alerts come from the <a href="https://github.com/Thonbo/Utils/issues?q=is%3Aissue+label%3Aant-watch" rel="noopener">GitHub dashboard issue</a>. Prices are from Yahoo Finance and can be delayed by up to 15 minutes.<br>
+  Indicators describe the past, not the future. This is not financial advice.</p>
+</main>
+<script type="module" src="app.js"></script>
+</body>
+</html>
