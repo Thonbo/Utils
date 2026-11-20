@@ -1,4 +1,4 @@
-// Shared Yahoo Finance helpers for the Stock Watch functions.
+// Shared Yahoo Finance helpers for the Stockwise functions.
 const HOSTS = ["query1.finance.yahoo.com", "query2.finance.yahoo.com"];
 const UA = { "User-Agent": "Mozilla/5.0 (stock-watch)" };
 

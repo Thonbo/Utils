@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stock Watch (started as ANT Watch) - follows a watchlist of stocks (default: Anthropic,
+"""Stockwise (started as ANT Watch) - follows a watchlist of stocks (default: Anthropic,
 NVIDIA and SpaceX) and classifies each as
 RISING, FALLING, STABLE, VOLATILE or NORMAL using widely used technical indicators:
 

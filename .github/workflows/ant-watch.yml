@@ -1,4 +1,4 @@
-name: Stock Watch
+name: Stockwise
 
 on:
   schedule:
@@ -24,6 +24,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # The list you edit on the website. If the site can't be reached, WATCHLIST below is used.
-          WATCHLIST_URL: "https://ant-watch-live.netlify.app/api/watchlist"
+          WATCHLIST_URL: "https://stockwise-watch.netlify.app/api/watchlist"
           WATCHLIST: "ANT:Anthropic:83,NVDA:NVIDIA,SPCX:SpaceX:135"
         run: python3 ant-watch/ant_watch.py
