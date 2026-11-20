@@ -22,25 +22,26 @@ const RANGES = [
   { key: "5Y", src: "daily", months: 60 },
 ];
 
+// Icons are Lucide (lucide-static 1.69.0, ISC licence): RISING = trending-up, FALLING = trending-down, STABLE = minus, VOLATILE = activity, NORMAL = circle, WARMING_UP = hourglass.
 const STATES = {
   RISING:     { label: "Rising",     color: "--s-rising",   meaning: "A clear uptrend: trend strength is high and buyers are in control.",
                 you: "If you plan to buy, waiting longer may mean paying more. Check that momentum isn't overheated (RSI above 70) before you chase it.",
-                icon: '<path d="M4 16 10 10l4 4 6-7"/><path d="M15 7h5v5"/>' },
+                icon: '<path d="M16 7h6v6"/><path d="m22 7-8.5 8.5-5-5L2 17"/>' },
   FALLING:    { label: "Falling",    color: "--s-falling",  meaning: "A clear downtrend: trend strength is high and sellers are in control.",
                 you: "Usually best to wait. Many people wait for a downtrend to flatten out and turn Stable before buying.",
-                icon: '<path d="M4 8l6 6 4-4 6 7"/><path d="M15 17h5v-5"/>' },
+                icon: '<path d="M16 17h6v-6"/><path d="m22 17-8.5-8.5-5 5L2 7"/>' },
   STABLE:     { label: "Stable",     color: "--s-stable",   meaning: "Calm and sideways: no real trend, and price swings are narrower than usual.",
                 you: "This is the calm you've been waiting for. A Stable stretch that then breaks upward is the classic 'buy before it runs' moment.",
-                icon: '<path d="M4 12h16"/><path d="M4 7h16" opacity=".35"/><path d="M4 17h16" opacity=".35"/>' },
+                icon: '<path d="M5 12h14"/>' },
   VOLATILE:   { label: "Volatile",   color: "--s-volatile", meaning: "Big, choppy swings without a clear direction.",
                 you: "Usually best to wait. Prices can swing a lot within hours.",
-                icon: '<path d="M3 13l3-6 4 10 4-12 3 9 4-4"/>' },
+                icon: '<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/>' },
   NORMAL:     { label: "Normal",     color: "--s-normal",   meaning: "Nothing stands out: mild moves, no strong trend and normal swings.",
                 you: "There's no signal to act on. Keep waiting for Stable.",
-                icon: '<circle cx="12" cy="12" r="6"/>' },
+                icon: '<circle cx="12" cy="12" r="10"/>' },
   WARMING_UP: { label: "Warming up", color: "--s-warm",     meaning: "There isn't enough price history yet to judge reliably.",
                 you: "Hang tight. The tracker needs a few more hours of trading data.",
-                icon: '<path d="M7 4h10M7 20h10M8 4c0 5 8 5 8 8s-8 3-8 8M16 4c0 5-8 5-8 8"/>' },
+                icon: '<path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>' },
 };
 
 const $ = (id) => document.getElementById(id);
@@ -66,7 +67,15 @@ let current = null, data = null, model = null, entry = null, range = store.get("
 const cfg = () => WATCHLIST.find((w) => w.symbol === current) ?? { symbol: current, name: current };
 
 function icon(state) {
-  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${STATES[state].icon}</svg>`;
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${STATES[state].icon}</svg>`;
+}
+// Small Lucide icons used inline in text (lucide-static 1.69.0).
+const LUCIDE = {
+  "arrow-up": '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
+  "arrow-down": '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>',
+};
+function lucide(name, size = 16) {
+  return `<svg class="lucide" viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${LUCIDE[name]}</svg>`;
 }
 function el(tag, attrs = {}, parent) {
   const e = document.createElementNS(NS, tag);
@@ -101,7 +110,7 @@ function renderHero() {
 
   const pr = h("div", "price-row");
   pr.innerHTML = `<span class="price">${money(data.price)}</span>` +
-    (dayChange != null ? `<span class="delta ${dayChange >= 0 ? "up" : "down"}">${dayChange >= 0 ? "▲" : "▼"} ${pct(dayChange)} today</span>` : "") +
+    (dayChange != null ? `<span class="delta ${dayChange >= 0 ? "up" : "down"}">${lucide(dayChange >= 0 ? "arrow-up" : "arrow-down", 16)}${pct(dayChange)} today</span>` : "") +
     (ipo ? `<span class="sub">${pct((data.price / ipo - 1) * 100)} vs IPO price $${ipo}</span>` : "");
   pr.append(h("span", "sub", `Ticker: ${current}`));
   hero.append(pr);
@@ -381,7 +390,8 @@ function renderWatchlist() {
     nav.append(b);
   }
   const add = h("button", "watch-item add-item");
-  add.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Add stock</span>';
+  // Lucide "plus"
+  add.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Add stock</span>';
   add.setAttribute("aria-expanded", String(!$("add-panel").hidden));
   add.onclick = () => toggleAdd();
   nav.append(add);
