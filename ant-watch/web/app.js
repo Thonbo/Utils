@@ -80,6 +80,7 @@ const LUCIDE = {
   "pencil": '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
   "trash-2": '<path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
   "x": '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  "external-link": '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
 };
 function lucide(name, size = 16) {
   return `<svg class="lucide" viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${LUCIDE[name]}</svg>`;
@@ -421,13 +422,14 @@ function select(symbol) {
 function renderCurrent() {
   entry = cache[current];
   if (!entry?.data) {
+    $("about").hidden = true;
     $("hero").innerHTML = "";
     $("hero").append(h("p", entry?.error ? "err" : "skeleton", entry?.error ? `Couldn't load prices: ${entry.error}. It will try again in a minute.` : "Fetching the latest prices…"));
     return;
   }
   ({ data, model } = entry);
   hoverIdx = null;
-  renderHero(); renderRanges(); renderSignals(); renderChart();
+  renderHero(); renderAbout(); renderRanges(); renderSignals(); renderChart();
   $("fresh").textContent = entry.stale
     ? `Couldn't refresh (${entry.stale}). Showing ${fmtTime.format(data.marketTime * 1000)} ET.`
     : `Last trade ${fmtTime.format(data.marketTime * 1000)} ET · refreshes every minute`;
@@ -560,6 +562,90 @@ async function removeStock(symbol) {
   } catch (e) {
     setMsg(e.message, "err");
   }
+}
+
+// ------------------------------------------------------------------ about the company
+// Works for any stock: sector and industry come from Yahoo (via /api/search), and a short
+// description from Wikipedia, fetched straight from the browser and kept for a week.
+const PROFILE_TTL = 7 * DAY * 1000;
+const COMPANYISH = /\b(company|corporation|conglomerate|manufacturer|maker|firm|retailer|bank|REIT|real estate investment trust|trust|fund|exchange-traded|holding|developer|provider|operator|airline|producer|business|enterprise|brand|startup|multinational|chain|insurer|automaker|pharmaceutical|biotechnology|utility|miner|mining)\b/i;
+const profiles = {}; // symbol -> profile | Promise
+function cleanName(name) {
+  let q = String(name || "").trim(), prev;
+  do { prev = q; q = shortName(q).replace(/,?\s+(SE|AG|ASA|A\/S|AB|Class [A-C])$/i, "").trim(); } while (q !== prev);
+  return q;
+}
+// First n sentences, without cutting at abbreviations like "Inc." or "U.S.".
+function firstSentences(text, n) {
+  const parts = text.split(/(?<=[.!?])\s+(?=[A-Z0-9"“(])/), out = [];
+  for (const part of parts) {
+    if (out.length && /\b(Inc|Corp|Co|Ltd|Jr|Sr|St|Mr|Mrs|Dr|No|vs|U\.S|U\.K|S\.A|N\.V)\.$/.test(out.at(-1))) out[out.length - 1] += " " + part;
+    else out.push(part);
+  }
+  return out.slice(0, n).join(" ").trim();
+}
+async function wikiProfile(names) {
+  for (const q of names) {
+    if (!q) continue;
+    const res = await fetch(`https://en.wikipedia.org/w/rest.php/v1/search/page?q=${encodeURIComponent(q)}&limit=5`);
+    if (!res.ok) throw new Error(`Wikipedia answered ${res.status}`);
+    const first = q.split(/\s+/)[0].toLowerCase();
+    const page = (await res.json()).pages?.find((p) => COMPANYISH.test(p.description || "") &&
+      (first.length < 3 || p.title.toLowerCase().includes(first) || q.toLowerCase().includes(p.title.toLowerCase())));
+    if (!page) continue;
+    const sum = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(page.key)}`);
+    if (!sum.ok) throw new Error(`Wikipedia answered ${sum.status}`);
+    const j = await sum.json();
+    if (j.type !== "standard") continue;
+    // Keep it short: the first three sentences.
+    return { title: j.title, description: j.description || "", text: firstSentences(j.extract || "", 3), url: j.content_urls?.desktop?.page };
+  }
+  return null;
+}
+async function loadProfile(symbol) {
+  const key = `stockwise-profile:${symbol}`;
+  try { const c = JSON.parse(store.get(key) || "null"); if (c && Date.now() - c.at < PROFILE_TTL) return c; } catch {}
+  const w = WATCHLIST.find((x) => x.symbol === symbol), longName = cache[symbol]?.data?.name;
+  const p = { at: Date.now(), sector: "", industry: "", wiki: null };
+  try {
+    const r = await (await fetch(`/api/search?q=${encodeURIComponent(symbol)}`)).json();
+    const hit = (r.results || []).find((x) => x.symbol === symbol);
+    if (hit) { p.sector = hit.sector || ""; p.industry = hit.industry || ""; }
+  } catch {}
+  let wikiFailed = false;
+  try { p.wiki = await wikiProfile([...new Set([cleanName(w?.name), cleanName(longName)])]); } catch { wikiFailed = true; }
+  if (!wikiFailed) store.set(key, JSON.stringify(p)); // don't remember a temporary failure
+  return p;
+}
+function renderAbout() {
+  const sym = current, box = $("about");
+  box.hidden = false;
+  const draw = (p) => {
+    if (sym !== current) return;
+    box.innerHTML = "";
+    box.append(h("h2", null, `About ${cfg().name}`));
+    const ind = [p?.sector, p?.industry].filter(Boolean).join(" · ");
+    if (ind) box.append(h("p", "industry", ind));
+    if (p?.wiki?.text) {
+      box.append(h("p", "text", p.wiki.text));
+      if (p.wiki.url) {
+        const a = h("a");
+        a.href = p.wiki.url; a.target = "_blank"; a.rel = "noopener";
+        a.append("Read more on Wikipedia");
+        a.insertAdjacentHTML("beforeend", lucide("external-link", 14));
+        box.append(a);
+      }
+    } else if (p) {
+      box.append(h("p", "muted", "No company description found."));
+    } else {
+      box.append(h("p", "muted", "Looking up the company…"));
+    }
+  };
+  const known = profiles[sym];
+  if (known && !(known instanceof Promise)) return draw(known);
+  draw(null);
+  if (!known) profiles[sym] = loadProfile(sym).then((p) => (profiles[sym] = p)).catch(() => (profiles[sym] = { sector: "", industry: "", wiki: null }));
+  Promise.resolve(profiles[sym]).then(draw);
 }
 
 // ------------------------------------------------------------------ load

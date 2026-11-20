@@ -38,5 +38,8 @@ export async function search(q: string) {
   const json = await yahoo(`/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=10&newsCount=0&listsCount=0`);
   return (json?.quotes ?? [])
     .filter((x: any) => (x.quoteType === "EQUITY" || x.quoteType === "ETF") && x.symbol && SYMBOL_RE.test(x.symbol))
-    .map((x: any) => ({ symbol: x.symbol, name: x.longname || x.shortname || x.symbol, exchange: x.exchDisp ?? "", type: x.typeDisp ?? "" }));
+    .map((x: any) => ({
+      symbol: x.symbol, name: x.longname || x.shortname || x.symbol, exchange: x.exchDisp ?? "", type: x.typeDisp ?? "",
+      sector: x.sectorDisp ?? x.sector ?? "", industry: x.industryDisp ?? x.industry ?? "",
+    }));
 }

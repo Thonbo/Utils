@@ -107,6 +107,12 @@ details ul { padding-left: 18px; margin: 10px 0 0; }
 .results .result small { grid-column: 2; color: var(--muted); font-size: 12px; }
 .results .muted, .muted { color: var(--muted); }
 .results li.muted, .results li.err { padding: 10px 4px; }
+.about[hidden] { display: none; }
+.about h2 { margin-bottom: 6px; }
+.about .industry { font-size: 13px; color: var(--ink-2); margin: 0 0 8px; }
+.about p.text { margin: 0 0 8px; }
+.about a { color: var(--ink-2); font-size: 13px; display: inline-flex; align-items: center; gap: 4px; }
+.about a:hover { color: var(--ink); }
 .hint { margin: 0 0 8px; font-size: 13px; color: var(--ink-2); }
 .manage { list-style: none; margin: 0 0 18px; padding: 0; }
 .manage-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--grid); }
@@ -175,6 +181,8 @@ details ul { padding-left: 18px; margin: 10px 0 0; }
   </section>
 
   <section class="card hero" id="hero"><div class="skeleton">Fetching the latest prices…</div></section>
+
+  <section class="card about" id="about" hidden></section>
 
   <section class="card">
     <div class="toolbar">

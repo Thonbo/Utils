@@ -45,6 +45,10 @@ Your list is saved **in your browser** (local storage), with no account or passw
 
 **Alerts** come from the GitHub notifier, which can't see browser lists. It checks the stocks in `WATCHLIST` in `.github/workflows/ant-watch.yml`; edit that line to change which stocks send alerts.
 
+## About the company
+
+Under the price, each stock shows its **sector and industry** (from Yahoo) and a **short description** (the first three sentences of its Wikipedia article), with a link to read more. This works for any stock you add. Your browser fetches the description straight from Wikipedia and keeps it for a week. If no matching article is found, it says so.
+
 ## Time ranges
 
 Every stock has the same buttons: **1D · 5D · 1M** use 15‑minute bars, and **3M · 6M · 1Y · 5Y** use daily bars. A button is greyed out when the stock doesn't have more history to show, for example 1Y for a stock that listed last month. The coloured strip under the chart always shows the stock's official state, the same one the notifications use.
