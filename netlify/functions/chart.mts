@@ -12,6 +12,7 @@ export default async (req: Request) => {
       {
         ticker: symbol,
         name: m.longName ?? m.shortName ?? symbol,
+        currency: m.currency ?? "USD",
         price: m.regularMarketPrice ?? intra.bars.c.at(-1),
         marketTime: m.regularMarketTime ?? intra.bars.t.at(-1),
         intraday: intra.bars,

@@ -48,20 +48,56 @@ const STATES = {
 
 const $ = (id) => document.getElementById(id);
 const ET = "America/New_York";
-const fmtTime = new Intl.DateTimeFormat("en-US", { timeZone: ET, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-const fmtDay = new Intl.DateTimeFormat("en-US", { timeZone: ET, month: "short", day: "numeric" });
-const fmtDayYear = new Intl.DateTimeFormat("en-US", { timeZone: ET, month: "short", day: "numeric", year: "numeric" });
-const fmtMonth = new Intl.DateTimeFormat("en-US", { timeZone: ET, month: "short" });
-const fmtYear = new Intl.DateTimeFormat("en-US", { timeZone: ET, year: "numeric" });
-const fmtHour = new Intl.DateTimeFormat("en-US", { timeZone: ET, hour: "numeric" });
-const fmtDayKey = new Intl.DateTimeFormat("en-CA", { timeZone: ET });
-const money = (x) => `$${x.toFixed(2)}`;
-const pct = (x) => `${x >= 0 ? "+" : "−"}${Math.abs(x).toFixed(1)}%`;
-const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const store = {
   get(k) { try { return localStorage.getItem(k); } catch { return null; } },
   set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} },
 };
+
+// ------------------------------------------------------------------ settings (saved in this browser)
+const CURRENCIES = ["USD", "EUR", "DKK", "SEK", "NOK", "GBP", "CHF", "JPY", "CAD", "AUD"];
+const SETTINGS_KEY = "stockwise-settings";
+let settings = { clock: "24", currency: "native" }; // native = each stock's own currency
+try { settings = { ...settings, ...JSON.parse(store.get(SETTINGS_KEY) || "{}") }; } catch {}
+if (!["24", "12"].includes(settings.clock)) settings.clock = "24";
+if (settings.currency !== "native" && !CURRENCIES.includes(settings.currency)) settings.currency = "native";
+
+let fmtTime, fmtDay, fmtDayYear, fmtMonth, fmtYear, fmtHour;
+const fmtDayKey = new Intl.DateTimeFormat("en-CA", { timeZone: ET });
+const fmtHourKey = new Intl.DateTimeFormat("en-US", { timeZone: ET, hour: "2-digit", hourCycle: "h23" });
+function buildFormatters() {
+  const hc = settings.clock === "24" ? { hourCycle: "h23" } : { hourCycle: "h12" };
+  fmtTime = new Intl.DateTimeFormat("en-US", { timeZone: ET, month: "short", day: "numeric", hour: settings.clock === "24" ? "2-digit" : "numeric", minute: "2-digit", ...hc });
+  fmtDay = new Intl.DateTimeFormat("en-US", { timeZone: ET, month: "short", day: "numeric" });
+  fmtDayYear = new Intl.DateTimeFormat("en-US", { timeZone: ET, month: "short", day: "numeric", year: "numeric" });
+  fmtMonth = new Intl.DateTimeFormat("en-US", { timeZone: ET, month: "short" });
+  fmtYear = new Intl.DateTimeFormat("en-US", { timeZone: ET, year: "numeric" });
+  fmtHour = settings.clock === "24"
+    ? new Intl.DateTimeFormat("en-US", { timeZone: ET, hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+    : new Intl.DateTimeFormat("en-US", { timeZone: ET, hour: "numeric", hourCycle: "h12" });
+}
+buildFormatters();
+
+// Money: values arrive in the stock's own currency and are converted at today's rate.
+const fxRates = {}; // "USD>DKK" -> rate
+const nativeCur = (d = data) => d?.currency || "USD";
+const targetCur = (native) => (settings.currency === "native" ? native : settings.currency);
+function fxRate(native) {
+  const to = targetCur(native);
+  return native === to ? 1 : fxRates[`${native}>${to}`];
+}
+const nfCache = {};
+function nf(cur, digits) {
+  const k = `${cur}|${digits}`;
+  return nfCache[k] ??= new Intl.NumberFormat("en-US", { style: "currency", currency: cur, currencyDisplay: "narrowSymbol",
+    ...(digits == null ? {} : { minimumFractionDigits: digits, maximumFractionDigits: digits }) });
+}
+// money(x, d): x in the stock's own currency (d = that stock's data); falls back to the own currency until a rate is known.
+function money(x, d = data) {
+  const native = nativeCur(d), rate = fxRate(native);
+  return rate == null ? nf(native).format(x) : nf(targetCur(native)).format(x * rate);
+}
+const pct = (x) => `${x >= 0 ? "+" : "−"}${Math.abs(x).toFixed(1)}%`;
+const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 let WATCHLIST = DEFAULT_WATCHLIST;
 const cache = {}; // symbol -> { data, model, intraRows, dailyRows, error, stale }
@@ -80,6 +116,7 @@ const LUCIDE = {
   "pencil": '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
   "trash-2": '<path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
   "x": '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  "settings": '<path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/>',
   "chevron-down": '<path d="m6 9 6 6 6-6"/>',
   "chevron-up": '<path d="m18 15-6-6-6 6"/>',
   "external-link": '<path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',
@@ -132,9 +169,13 @@ function renderHero() {
   const pr = h("div", "price-row");
   pr.innerHTML = `<span class="price">${money(data.price)}</span>` +
     (dayChange != null ? `<span class="delta ${dayChange >= 0 ? "up" : "down"}">${lucide(dayChange >= 0 ? "arrow-up" : "arrow-down", 16)}${pct(dayChange)} today</span>` : "") +
-    (ipo ? `<span class="sub">${pct((data.price / ipo - 1) * 100)} vs IPO price $${ipo}</span>` : "");
+    (ipo ? `<span class="sub">${pct((data.price / ipo - 1) * 100)} vs IPO price ${money(ipo)}</span>` : "");
   pr.append(h("span", "sub", `Ticker: ${current}`));
   hero.append(pr);
+  const native = nativeCur(), to = targetCur(native);
+  if (native !== to) hero.append(h("p", "sub conv", fxRate(native) == null
+    ? `Showing ${native}: the ${native}→${to} exchange rate isn't available right now.`
+    : `Prices in ${to}, converted from ${native} at today's rate (1 ${native} = ${fxRate(native).toFixed(4)} ${to}).`));
 
   const adv = h("div", "advice");
   adv.innerHTML = `<p><b>What it means:</b> ${s.meaning}</p><p><b>For you (waiting to buy):</b> ${s.you}</p>` +
@@ -246,7 +287,7 @@ function renderChart() {
   const svg = $("chart"), wrap = $("chart-wrap");
   const W = Math.max(300, Math.round(wrap.clientWidth));
   const H = W < 560 ? 260 : 320;
-  const m = { l: 4, r: 56, t: 12, b: 44 }, stripH = 10;
+  const m = { l: 4, r: 68, t: 12, b: 44 }, stripH = 10;
   const plotB = H - m.b, stripY = plotB + 8;
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   svg.innerHTML = "";
@@ -265,10 +306,13 @@ function renderChart() {
   const x = (i) => m.l + (n <= 1 ? (W - m.l - m.r) / 2 : (i / (n - 1)) * (W - m.l - m.r));
   const y = (v) => m.t + (1 - (v - lo) / (hi - lo)) * (plotB - m.t);
 
-  const step = niceStep((hi - lo) / 4);
-  for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) {
+  // Axis ticks are picked in the display currency so they land on round numbers.
+  const k = fxRate(nativeCur()) ?? 1, cur = fxRate(nativeCur()) == null ? nativeCur() : targetCur(nativeCur());
+  const step = niceStep(((hi - lo) * k) / 4), axisFmt = nf(cur, step < 1 ? 1 : 0);
+  for (let vc = Math.ceil((lo * k) / step) * step; vc <= hi * k; vc += step) {
+    const v = vc / k;
     el("line", { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), stroke: cssVar("--grid"), "stroke-width": 1 }, svg);
-    el("text", { x: W - m.r + 8, y: y(v) + 4 }, svg).textContent = `$${v.toFixed(step < 1 ? 1 : 0)}`;
+    el("text", { x: W - m.r + 8, y: y(v) + 4 }, svg).textContent = axisFmt.format(vc);
   }
 
   const band = rows.map((x, i) => [i, x]).filter(([, x]) => x.bbUp != null);
@@ -295,7 +339,7 @@ function renderChart() {
   }
 
   // x labels: hours (1D), days (5D/1M), months (3M–1Y) or years (5Y)
-  const keyFn = rk === "1D" ? (t) => fmtHour.format(t * 1000) : !isDaily ? (t) => fmtDayKey.format(t * 1000)
+  const keyFn = rk === "1D" ? (t) => fmtHourKey.format(t * 1000) : !isDaily ? (t) => fmtDayKey.format(t * 1000)
     : rk === "5Y" ? (t) => fmtYear.format(t * 1000) : (t) => fmtDayKey.format(t * 1000).slice(0, 7);
   const labelFn = rk === "1D" ? (t) => fmtHour.format(t * 1000) : !isDaily ? (t) => fmtDay.format(t * 1000)
     : rk === "5Y" ? (t) => fmtYear.format(t * 1000) : (t) => fmtMonth.format(t * 1000);
@@ -394,7 +438,7 @@ function renderWatchlist() {
     b.setAttribute("aria-pressed", String(w.symbol === current));
     const top = h("div", "w-name", w.name);
     top.append(h("span", null, ` ${w.symbol}`));
-    const price = h("div", "w-price", e?.data ? money(e.data.price) : e?.error ? "Unavailable" : "…");
+    const price = h("div", "w-price", e?.data ? money(e.data.price, e.data) : e?.error ? "Unavailable" : "…");
     const st = h("div", "w-state");
     if (e?.data) {
       const dc = dayChange(e.data);
@@ -661,6 +705,40 @@ function renderAbout() {
   Promise.resolve(profiles[sym]).then(draw);
 }
 
+// ------------------------------------------------------------------ settings panel
+function renderSettings() {
+  const clock = $("set-clock");
+  clock.innerHTML = "";
+  for (const [v, label] of [["24", "24-hour"], ["12", "12-hour"]]) {
+    const b = h("button", null, label);
+    b.setAttribute("aria-pressed", String(settings.clock === v));
+    b.onclick = () => saveSettings({ clock: v });
+    clock.append(b);
+  }
+  const sel = $("set-currency");
+  if (!sel.options.length) {
+    sel.append(new Option("Stock's own currency", "native"));
+    for (const c of CURRENCIES) sel.append(new Option(c, c));
+    sel.onchange = () => saveSettings({ currency: sel.value });
+  }
+  sel.value = settings.currency;
+}
+async function saveSettings(change) {
+  settings = { ...settings, ...change };
+  store.set(SETTINGS_KEY, JSON.stringify(settings));
+  buildFormatters();
+  renderSettings();
+  if ("currency" in change) await loadRates();
+  renderWatchlist();
+  if (model) renderCurrent();
+}
+function toggleSettings(open) {
+  const panel = $("settings-panel");
+  panel.hidden = open === undefined ? !panel.hidden : !open;
+  $("settings-btn").setAttribute("aria-expanded", String(!panel.hidden));
+  if (!panel.hidden) renderSettings();
+}
+
 // ------------------------------------------------------------------ load
 async function fetchOne(symbol) {
   try {
@@ -686,18 +764,37 @@ function loadWatchlist() {
   if (!active().some((w) => w.symbol === current)) current = active()[0].symbol;
   if (!$("add-panel").hidden) renderManage();
 }
+async function loadRates() {
+  const needed = new Set();
+  for (const w of active()) {
+    const native = cache[w.symbol]?.data?.currency;
+    if (native && targetCur(native) !== native) needed.add(`${native}>${targetCur(native)}`);
+  }
+  await Promise.all([...needed].filter((k) => !(k in fxRates) || fxRates[`${k}@`] < Date.now() - 15 * 60_000).map(async (k) => {
+    const [from, to] = k.split(">");
+    try {
+      const j = await (await fetch(`/api/fx?from=${from}&to=${to}`)).json();
+      if (j.rate) { fxRates[k] = j.rate; fxRates[`${k}@`] = Date.now(); }
+    } catch {}
+  }));
+}
 async function load() {
   loadWatchlist();
   // The selected stock first, so its view appears quickly; then the rest.
   await fetchOne(current);
+  await loadRates();
   renderWatchlist(); renderCurrent();
   await Promise.all(active().filter((w) => w.symbol !== current).map((w) => fetchOne(w.symbol)));
+  await loadRates();
   renderWatchlist();
 }
 
 current = location.hash.slice(1).toUpperCase() || store.get("stockwatch-symbol") || DEFAULT_WATCHLIST[0].symbol;
 $("add-search").addEventListener("input", (ev) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => runSearch(ev.target.value), 250); });
 $("add-close").onclick = () => toggleAdd(false);
+$("settings-btn").insertAdjacentHTML("afterbegin", lucide("settings", 18));
+$("settings-btn").onclick = () => toggleSettings();
+$("settings-close").onclick = () => toggleSettings(false);
 $("add-panel").addEventListener("keydown", (ev) => { if (ev.key === "Escape") toggleAdd(false); });
 renderWatchlist();
 load();

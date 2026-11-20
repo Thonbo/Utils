@@ -31,7 +31,7 @@ A stock with fewer than 60 trading days of history is judged on 15‑minute bars
 
 - `ant_watch.py` is the notifier. It runs on GitHub Actions and updates one issue per stock.
 - `web/` is the Netlify page. `web/analysis.js` is a JavaScript copy of the same rules; keep the two in sync.
-- `netlify/functions/` holds the server code: `chart.mts` (prices) and `search.mts` (stock search). They fetch from Yahoo on the server, because Yahoo blocks requests made straight from a browser. Shared code is in `netlify/lib/yahoo.mts`.
+- `netlify/functions/` holds the server code: `chart.mts` (prices), `search.mts` (stock search) and `fx.mts` (exchange rates). They fetch from Yahoo on the server, because Yahoo blocks requests made straight from a browser. Shared code is in `netlify/lib/yahoo.mts`.
 - The Netlify project is called `stockwise-watch`.
 
 ## Adding, switching off and deleting stocks
@@ -48,6 +48,14 @@ Your list is saved **in your browser** (local storage), with no account or passw
 ## About the company
 
 Under the chart, each stock shows its **sector and industry** (from Yahoo) and a **short description** (the first three sentences of its Wikipedia article), with a link to read more. Tap the heading to minimize it; the page remembers your choice. This works for any stock you add. Your browser fetches the description straight from Wikipedia and keeps it for a week. If no matching article is found, it says so.
+
+## Settings
+
+Tap the gear icon at the top right:
+- **Time format:** 24-hour (the default) or 12-hour. Times are New York time, where the stocks trade.
+- **Currency:** each stock's own currency (the default), or USD, EUR, DKK, SEK, NOK, GBP, CHF, JPY, CAD or AUD. Prices are converted at today's exchange rate from Yahoo (`/api/fx`). The chart uses today's rate for older prices too, so it shows the stock's moves, not currency swings.
+
+Settings are saved in your browser.
 
 ## Time ranges
 
