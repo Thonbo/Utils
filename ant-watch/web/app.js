@@ -65,6 +65,8 @@ let WATCHLIST = DEFAULT_WATCHLIST;
 const cache = {}; // symbol -> { data, model, intraRows, dailyRows, error, stale }
 let current = null, data = null, model = null, entry = null, range = store.get("stockwatch-range") || "5D", hoverIdx = null;
 const cfg = () => WATCHLIST.find((w) => w.symbol === current) ?? { symbol: current, name: current };
+// Stocks switched off in "Edit list" stay on the list but are hidden here and get no alerts.
+const active = () => WATCHLIST.filter((w) => w.on !== false);
 
 function icon(state) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${STATES[state].icon}</svg>`;
@@ -73,6 +75,9 @@ function icon(state) {
 const LUCIDE = {
   "arrow-up": '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
   "arrow-down": '<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>',
+  "pencil": '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
+  "trash-2": '<path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  "x": '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
 };
 function lucide(name, size = 16) {
   return `<svg class="lucide" viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${LUCIDE[name]}</svg>`;
@@ -121,9 +126,6 @@ function renderHero() {
     (last.pending && last.pending !== key ? `<p class="pending">This may be turning ${STATES[last.pending].label}. It needs one more bar to confirm.</p>` : "");
   hero.append(adv);
 
-  const rm = h("button", "link-btn", `Remove ${cfg().name} from my list`);
-  rm.onclick = () => removeStock(current);
-  if (WATCHLIST.length > 1) hero.append(rm);
 }
 
 // ------------------------------------------------------------------ signals
@@ -370,7 +372,7 @@ function dayChange(d) {
 function renderWatchlist() {
   const nav = $("watchlist");
   nav.innerHTML = "";
-  for (const w of WATCHLIST) {
+  for (const w of active()) {
     const e = cache[w.symbol];
     const b = h("button", "watch-item");
     b.setAttribute("aria-pressed", String(w.symbol === current));
@@ -389,12 +391,12 @@ function renderWatchlist() {
     b.onclick = () => select(w.symbol);
     nav.append(b);
   }
-  const add = h("button", "watch-item add-item");
-  // Lucide "plus"
-  add.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Add stock</span>';
-  add.setAttribute("aria-expanded", String(!$("add-panel").hidden));
-  add.onclick = () => toggleAdd();
-  nav.append(add);
+  const edit = h("button", "watch-item add-item");
+  edit.innerHTML = lucide("pencil", 18);
+  edit.append(h("span", null, "Edit list"));
+  edit.setAttribute("aria-expanded", String(!$("add-panel").hidden));
+  edit.onclick = () => toggleAdd();
+  nav.append(edit);
 }
 function select(symbol) {
   current = symbol;
@@ -425,8 +427,37 @@ function toggleAdd(open) {
   panel.hidden = open === undefined ? !panel.hidden : !open;
   $("add-key-row").hidden = !!store.get("stockwatch-key");
   $("add-msg").textContent = "";
+  renderManage();
   renderWatchlist();
-  if (!panel.hidden) $("add-search").focus();
+}
+function setMsg(text, cls = "muted") { const m = $("add-msg"); m.className = cls; m.textContent = text; }
+
+// "Your stocks": an on/off switch and a delete button for every stock on the list.
+function renderManage() {
+  const ul = $("manage-list");
+  ul.innerHTML = "";
+  const onCount = active().length;
+  for (const w of WATCHLIST) {
+    const on = w.on !== false;
+    const li = h("li", `manage-row${on ? "" : " off"}`);
+    const label = h("div", "m-name", w.name);
+    label.append(h("span", null, ` ${w.symbol}`));
+    const sw = h("button", "switch");
+    sw.setAttribute("role", "switch");
+    sw.setAttribute("aria-checked", String(on));
+    sw.setAttribute("aria-label", `${w.name} ${on ? "on" : "off"}`);
+    sw.title = on ? "On: shown and sends alerts" : "Off: hidden, no alerts";
+    sw.disabled = on && onCount <= 1;
+    sw.onclick = () => toggleStock(w.symbol, !on);
+    const del = h("button", "icon-btn danger");
+    del.innerHTML = lucide("trash-2", 18);
+    del.setAttribute("aria-label", `Delete ${w.name}`);
+    del.title = "Delete from the list";
+    del.disabled = WATCHLIST.length <= 1 || (on && onCount <= 1);
+    del.onclick = () => removeStock(w.symbol);
+    li.append(label, sw, del);
+    ul.append(li);
+  }
 }
 async function runSearch(q) {
   const seq = ++searchSeq, list = $("add-results");
@@ -457,12 +488,12 @@ function editKey() {
   if (typed) store.set("stockwatch-key", typed);
   return store.get("stockwatch-key");
 }
-async function changeList(action, symbol, name) {
+async function changeList(action, symbol, name, on) {
   const key = editKey();
   if (!key) throw new Error("Enter your edit key first.");
   const res = await fetch("/api/watchlist", {
     method: "POST", headers: { "Content-Type": "application/json", "X-Edit-Key": key },
-    body: JSON.stringify({ action, symbol, name }),
+    body: JSON.stringify({ action, symbol, name, on }),
   });
   const json = await res.json().catch(() => ({}));
   if (res.status === 401) { store.set("stockwatch-key", null); $("add-key-row").hidden = false; }
@@ -470,8 +501,7 @@ async function changeList(action, symbol, name) {
   WATCHLIST = json.stocks;
 }
 async function addStock(symbol, name) {
-  const msg = $("add-msg");
-  msg.className = "muted"; msg.textContent = `Adding ${symbol}…`;
+  setMsg(`Adding ${symbol}…`);
   try {
     await changeList("add", symbol, name);
     $("add-search").value = ""; $("add-results").innerHTML = "";
@@ -479,23 +509,39 @@ async function addStock(symbol, name) {
     await fetchOne(symbol);
     select(symbol);
   } catch (e) {
-    msg.className = "err"; msg.textContent = e.message;
+    setMsg(e.message, "err");
+  }
+}
+function afterListChange() {
+  if (!active().some((w) => w.symbol === current)) current = active()[0].symbol;
+  $("add-key-row").hidden = !!store.get("stockwatch-key");
+  renderManage();
+  select(current);
+}
+async function toggleStock(symbol, on) {
+  const name = WATCHLIST.find((w) => w.symbol === symbol)?.name ?? symbol;
+  setMsg(`Turning ${name} ${on ? "on" : "off"}…`);
+  try {
+    await changeList("toggle", symbol, undefined, on);
+    setMsg(on ? `${name} is on: shown here and sends alerts.` : `${name} is off: hidden and no alerts. Switch it back on any time.`);
+    if (on && !cache[symbol]?.data) await fetchOne(symbol);
+    afterListChange();
+  } catch (e) {
+    setMsg(e.message, "err");
+    renderManage();
   }
 }
 async function removeStock(symbol) {
-  const name = cfg().name;
-  if (!confirm(`Remove ${name} (${symbol}) from your list? You'll stop getting alerts for it.`)) return;
-  if (!store.get("stockwatch-key")) {
-    const k = prompt("Enter your edit key to change the list:");
-    if (!k) return;
-    store.set("stockwatch-key", k.trim());
-  }
+  const name = WATCHLIST.find((w) => w.symbol === symbol)?.name ?? symbol;
+  if (!confirm(`Delete ${name} (${symbol}) from your list? To keep it but hide it, use its switch instead.`)) return;
+  setMsg(`Deleting ${name}…`);
   try {
     await changeList("remove", symbol);
     delete cache[symbol];
-    select(WATCHLIST.some((w) => w.symbol === current) ? current : WATCHLIST[0].symbol);
+    setMsg(`${name} deleted.`);
+    afterListChange();
   } catch (e) {
-    alert(`Couldn't remove ${symbol}: ${e.message}`);
+    setMsg(e.message, "err");
   }
 }
 
@@ -521,14 +567,16 @@ async function loadWatchlist() {
     const json = await res.json();
     if (res.ok && Array.isArray(json.stocks) && json.stocks.length) WATCHLIST = json.stocks;
   } catch {}
-  if (!WATCHLIST.some((w) => w.symbol === current)) current = WATCHLIST[0].symbol;
+  if (!active().length) WATCHLIST = WATCHLIST.map((w, i) => (i === 0 ? { ...w, on: true } : w));
+  if (!active().some((w) => w.symbol === current)) current = active()[0].symbol;
+  if (!$("add-panel").hidden) renderManage();
 }
 async function load() {
   await loadWatchlist();
   // The selected stock first, so its view appears quickly; then the rest.
   await fetchOne(current);
   renderWatchlist(); renderCurrent();
-  await Promise.all(WATCHLIST.filter((w) => w.symbol !== current).map((w) => fetchOne(w.symbol)));
+  await Promise.all(active().filter((w) => w.symbol !== current).map((w) => fetchOne(w.symbol)));
   renderWatchlist();
 }
 
@@ -540,7 +588,7 @@ renderWatchlist();
 load();
 setInterval(() => { if (!document.hidden) load(); }, REFRESH_MS);
 document.addEventListener("visibilitychange", () => { if (!document.hidden && data && Date.now() - data.fetchedAt > REFRESH_MS) load(); });
-window.addEventListener("hashchange", () => { const s = location.hash.slice(1).toUpperCase(); if (WATCHLIST.some((w) => w.symbol === s) && s !== current) select(s); });
+window.addEventListener("hashchange", () => { const s = location.hash.slice(1).toUpperCase(); if (active().some((w) => w.symbol === s) && s !== current) select(s); });
 let rt;
 window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => model && renderChart(), 100); });
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => model && renderChart());

@@ -62,8 +62,10 @@ def load_watchlist():
             req = urllib.request.Request(WATCHLIST_URL, headers={"User-Agent": "stock-watch"})
             with urllib.request.urlopen(req, timeout=20) as r:
                 stocks = json.load(r)["stocks"]
+            # Stocks switched off on the website (on: false) are skipped.
             out = [{"symbol": str(x["symbol"]).upper(), "name": str(x.get("name") or x["symbol"]),
-                    "ipo": float(x["ipo"]) if x.get("ipo") else None} for x in stocks if x.get("symbol")]
+                    "ipo": float(x["ipo"]) if x.get("ipo") else None}
+                   for x in stocks if x.get("symbol") and x.get("on", True) is not False]
             if out:
                 print(f"Watchlist from website: {', '.join(x['symbol'] for x in out)}")
                 return out

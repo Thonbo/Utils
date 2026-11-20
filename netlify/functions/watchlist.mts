@@ -1,10 +1,13 @@
 // The shared watchlist, stored in Netlify Blobs so it is the same on every device.
-// GET  /api/watchlist                      -> { stocks: [{symbol, name, ipo?}] }  (public; the GitHub notifier reads it)
-// POST /api/watchlist {action, symbol}     -> add or remove a stock; needs header X-Edit-Key = env WATCHLIST_EDIT_KEY
+// GET  /api/watchlist                      -> { stocks: [{symbol, name, ipo?, on?}] }  (public; the GitHub notifier reads it)
+// POST /api/watchlist {action, symbol, on?} -> action "add", "remove" or "toggle" (on: true/false);
+//                                             needs header X-Edit-Key = env WATCHLIST_EDIT_KEY
+// A stock with on: false stays on the list but is hidden on the page and gets no notifications.
 import { getStore } from "@netlify/blobs";
 import { fetchBars, SYMBOL_RE } from "../lib/yahoo.mts";
 
-type Stock = { symbol: string; name: string; ipo?: number };
+type Stock = { symbol: string; name: string; ipo?: number; on?: boolean };
+const isOn = (s: Stock) => s.on !== false;
 const DEFAULT: Stock[] = [
   { symbol: "ANT", name: "Anthropic", ipo: 83 },
   { symbol: "NVDA", name: "NVIDIA" },
@@ -53,7 +56,15 @@ export default async (req: Request) => {
     list = [...list, { symbol, name }];
   } else if (body.action === "remove") {
     if (list.length <= 1) return Response.json({ error: "Keep at least one stock on the list." }, { status: 400 });
-    list = list.filter((s) => s.symbol !== symbol);
+    const rest = list.filter((s) => s.symbol !== symbol);
+    if (!rest.some(isOn)) return Response.json({ error: "Keep at least one stock switched on." }, { status: 400 });
+    list = rest;
+  } else if (body.action === "toggle") {
+    const on = body.on === true;
+    if (!list.some((s) => s.symbol === symbol)) return Response.json({ error: `${symbol} isn't on the list.` }, { status: 400 });
+    const next = list.map((s) => (s.symbol === symbol ? { ...s, on } : s));
+    if (!next.some(isOn)) return Response.json({ error: "Keep at least one stock switched on." }, { status: 400 });
+    list = next;
   } else {
     return Response.json({ error: "Unknown action" }, { status: 400 });
   }

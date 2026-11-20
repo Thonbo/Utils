@@ -1,4 +1,5 @@
 """Offline tests: synthetic price patterns must be classified the way a human would expect."""
+import json
 import math
 import random
 import unittest
@@ -113,6 +114,28 @@ class Watchlist(unittest.TestCase):
             self.assertEqual([w["symbol"] for w in aw.load_watchlist()], ["ANT", "NVDA", "SPCX"])
         finally:
             aw.WATCHLIST_URL = old
+
+    def test_switched_off_stocks_are_skipped(self):
+        import http.server, threading
+        body = json.dumps({"stocks": [{"symbol": "ANT", "name": "Anthropic", "ipo": 83},
+                                      {"symbol": "NVDA", "name": "NVIDIA", "on": False},
+                                      {"symbol": "TSLA", "name": "Tesla", "on": True}]}).encode()
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200); self.end_headers(); self.wfile.write(body)
+
+            def log_message(self, *a):
+                pass
+        srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+        threading.Thread(target=srv.handle_request, daemon=True).start()
+        old = aw.WATCHLIST_URL
+        try:
+            aw.WATCHLIST_URL = f"http://127.0.0.1:{srv.server_port}/api/watchlist"
+            self.assertEqual([w["symbol"] for w in aw.load_watchlist()], ["ANT", "TSLA"])
+        finally:
+            aw.WATCHLIST_URL = old
+            srv.server_close()
 
     def test_alerts_name_the_ticker(self):
         s, _ = aw.step({}, {"state": "NORMAL"}, None, "d", "NVDA")

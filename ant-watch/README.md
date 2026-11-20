@@ -34,9 +34,14 @@ A stock with fewer than 60 trading days of history is judged on 15‑minute bars
 - `netlify/functions/` holds the server code: `chart.mts` (prices), `search.mts` (stock search) and `watchlist.mts` (the saved list). They fetch from Yahoo on the server, because Yahoo blocks requests made straight from a browser. Shared code is in `netlify/lib/yahoo.mts`.
 - The Netlify project is called `stockwise-watch`.
 
-## Adding or removing a stock
+## Adding, switching off and deleting stocks
 
-On the website, tap **+ Add stock**, search by company name or ticker and tap a result. To remove the stock you're viewing, tap **Remove … from my list** under its price.
+On the website, tap **Edit list**:
+- **Add:** search by company name or ticker and tap a result.
+- **Switch off/on:** a stock that's off is hidden from the dashboard and sends no alerts, but stays on the list so you can switch it back on.
+- **Delete** (bin icon): removes it from the list completely.
+
+At least one stock always stays switched on.
 
 Changing the list needs your **edit key**. You enter it once on each device. The key is stored on Netlify as the secret environment variable `WATCHLIST_EDIT_KEY` (project `stockwise-watch`, production context); change it there if you lose it or want a new one, then redeploy. Anyone can view the page, but only someone with the key can change the list.
 
