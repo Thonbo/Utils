@@ -1,0 +1,29 @@
+name: Stockwise
+
+on:
+  schedule:
+    # Every 15 min, Mon-Fri, 13:00-21:59 UTC (covers US market hours in both summer and winter time).
+    - cron: "*/15 13-21 * * 1-5"
+  workflow_dispatch: {} # lets you run it by hand from the Actions tab
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ant-watch
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check each stock and update its dashboard issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The stocks that get alerts: SYMBOL:Name[:IPO price], comma-separated.
+          # (The website's lists are saved in each browser, so the notifier can't see them.)
+          WATCHLIST: "ANT:Anthropic:83,NVDA:NVIDIA,SPCX:SpaceX:135"
+        run: python3 ant-watch/ant_watch.py
