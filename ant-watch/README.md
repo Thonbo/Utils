@@ -4,7 +4,7 @@ Tracks a watchlist of stocks (to start with **Anthropic (ANT)**, **NVIDIA (NVDA)
 
 ## How you use it
 
-**Live page:** https://ant-watch-live.netlify.app shows all three stocks. Tap one to see its current state, a price chart with the state history, and every signal. It refreshes every minute while it's open.
+**Live page:** https://ant-watch-live.netlify.app shows every stock on your list. Tap one to see its current state, a price chart with the state history, and every signal. It refreshes every minute while it's open.
 
 **Notifications:** each stock has its own issue in the **Issues** tab of this repo, for example **📊 NVIDIA (NVDA) – live status**. The issues update every 15 minutes while the US market is open. When something important happens, a comment is added to that stock's issue, and GitHub emails you or sends a push notification if you have the GitHub mobile app.
 
