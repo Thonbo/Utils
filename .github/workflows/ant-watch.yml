@@ -23,6 +23,7 @@ jobs:
       - name: Check each stock and update its dashboard issue
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # SYMBOL:Name[:IPO price], comma-separated. Must match WATCHLIST in ant-watch/web/app.js.
+          # The list you edit on the website. If the site can't be reached, WATCHLIST below is used.
+          WATCHLIST_URL: "https://ant-watch-live.netlify.app/api/watchlist"
           WATCHLIST: "ANT:Anthropic:83,NVDA:NVIDIA,SPCX:SpaceX:135"
         run: python3 ant-watch/ant_watch.py

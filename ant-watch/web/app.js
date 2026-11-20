@@ -1,13 +1,26 @@
-import { analyze } from "./analysis.js";
+import { analyze, analyzeSeries } from "./analysis.js";
 
-// Keep in sync with WATCHLIST in .github/workflows/ant-watch.yml and ALLOWED in netlify/functions/chart.mts.
-const WATCHLIST = [
+// The list itself lives on the server (/api/watchlist) so it is the same on every device.
+// This default is only used if the server can't be reached.
+const DEFAULT_WATCHLIST = [
   { symbol: "ANT", name: "Anthropic", ipo: 83 },
   { symbol: "NVDA", name: "NVIDIA" },
   { symbol: "SPCX", name: "SpaceX", ipo: 135 },
 ];
 const REFRESH_MS = 60_000;
 const NS = "http://www.w3.org/2000/svg";
+const DAY = 86_400;
+
+// Same buttons for every stock. Short ranges use 15-minute bars, long ones daily bars.
+const RANGES = [
+  { key: "1D", src: "intra", days: 1 },
+  { key: "5D", src: "intra", days: 5 },
+  { key: "1M", src: "intra", days: 22 },
+  { key: "3M", src: "daily", months: 3 },
+  { key: "6M", src: "daily", months: 6 },
+  { key: "1Y", src: "daily", months: 12 },
+  { key: "5Y", src: "daily", months: 60 },
+];
 
 const STATES = {
   RISING:     { label: "Rising",     color: "--s-rising",   meaning: "A clear uptrend: trend strength is high and buyers are in control.",
@@ -31,16 +44,26 @@ const STATES = {
 };
 
 const $ = (id) => document.getElementById(id);
-const fmtTime = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-const fmtDay = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" });
-const fmtDayKey = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" });
+const ET = "America/New_York";
+const fmtTime = new Intl.DateTimeFormat("en-US", { timeZone: ET, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+const fmtDay = new Intl.DateTimeFormat("en-US", { timeZone: ET, month: "short", day: "numeric" });
+const fmtDayYear = new Intl.DateTimeFormat("en-US", { timeZone: ET, month: "short", day: "numeric", year: "numeric" });
+const fmtMonth = new Intl.DateTimeFormat("en-US", { timeZone: ET, month: "short" });
+const fmtYear = new Intl.DateTimeFormat("en-US", { timeZone: ET, year: "numeric" });
+const fmtHour = new Intl.DateTimeFormat("en-US", { timeZone: ET, hour: "numeric" });
+const fmtDayKey = new Intl.DateTimeFormat("en-CA", { timeZone: ET });
 const money = (x) => `$${x.toFixed(2)}`;
 const pct = (x) => `${x >= 0 ? "+" : "−"}${Math.abs(x).toFixed(1)}%`;
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} },
+};
 
-const cache = {}; // symbol -> { data, model, error }
-let current = WATCHLIST[0].symbol, data = null, model = null, range = null, hoverIdx = null;
-const cfg = () => WATCHLIST.find((w) => w.symbol === current);
+let WATCHLIST = DEFAULT_WATCHLIST;
+const cache = {}; // symbol -> { data, model, intraRows, dailyRows, error, stale }
+let current = null, data = null, model = null, entry = null, range = store.get("stockwatch-range") || "5D", hoverIdx = null;
+const cfg = () => WATCHLIST.find((w) => w.symbol === current) ?? { symbol: current, name: current };
 
 function icon(state) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${STATES[state].icon}</svg>`;
@@ -49,6 +72,12 @@ function el(tag, attrs = {}, parent) {
   const e = document.createElementNS(NS, tag);
   for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
   if (parent) parent.appendChild(e);
+  return e;
+}
+function h(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text != null) e.textContent = text;
   return e;
 }
 
@@ -64,27 +93,28 @@ function renderHero() {
 
   const hero = $("hero");
   hero.innerHTML = "";
-  const badge = document.createElement("div");
-  badge.className = "badge";
+  const badge = h("div", "badge");
   badge.style.setProperty("--c", `var(${s.color})`);
   badge.innerHTML = icon(key);
   badge.append(`${cfg().name} is ${s.label}`);
   hero.append(badge);
 
-  const pr = document.createElement("div");
-  pr.className = "price-row";
+  const pr = h("div", "price-row");
   pr.innerHTML = `<span class="price">${money(data.price)}</span>` +
     (dayChange != null ? `<span class="delta ${dayChange >= 0 ? "up" : "down"}">${dayChange >= 0 ? "▲" : "▼"} ${pct(dayChange)} today</span>` : "") +
-    (ipo ? `<span class="sub">${pct((data.price / ipo - 1) * 100)} vs IPO price $${ipo}</span>` : "") +
-    `<span class="sub">Nasdaq: ${current}</span>`;
+    (ipo ? `<span class="sub">${pct((data.price / ipo - 1) * 100)} vs IPO price $${ipo}</span>` : "");
+  pr.append(h("span", "sub", `Ticker: ${current}`));
   hero.append(pr);
 
-  const adv = document.createElement("div");
-  adv.className = "advice";
+  const adv = h("div", "advice");
   adv.innerHTML = `<p><b>What it means:</b> ${s.meaning}</p><p><b>For you (waiting to buy):</b> ${s.you}</p>` +
     (key !== "WARMING_UP" ? `<p class="sub">${s.label} since ${model.useDaily ? fmtDay.format(rows[start].t * 1000) : fmtTime.format(rows[start].t * 1000) + " ET"} · judged on ${model.timeframe}</p>` : "") +
     (last.pending && last.pending !== key ? `<p class="pending">This may be turning ${STATES[last.pending].label}. It needs one more bar to confirm.</p>` : "");
   hero.append(adv);
+
+  const rm = h("button", "link-btn", `Remove ${cfg().name} from my list`);
+  rm.onclick = () => removeStock(current);
+  if (WATCHLIST.length > 1) hero.append(rm);
 }
 
 // ------------------------------------------------------------------ signals
@@ -124,35 +154,64 @@ function bandText(rank) {
 }
 
 // ------------------------------------------------------------------ ranges
-function rangeOptions() {
-  if (model.useDaily) return [["1M", 21], ["3M", 63], ["6M", 126], ["All", Infinity]];
-  return [["1D", 1], ["5D", 5], ["1M", 21], ["All", Infinity]];
-}
-function visibleStart() {
-  const rows = model.rows, n = rangeOptions().find(([k]) => k === range)?.[1] ?? Infinity;
-  if (n === Infinity) return 0;
-  if (model.useDaily) return Math.max(0, rows.length - n);
-  const days = [];
-  for (let i = rows.length - 1; i >= 0; i--) {
-    const k = fmtDayKey.format(rows[i].t * 1000);
-    if (days.at(-1) !== k) { if (days.length === n) return i + 1; days.push(k); }
+// Each range shows bars from one source; a range is greyed out when it would show no
+// more history than the range before it (e.g. 1Y for a stock that listed last month).
+function sliceFor(r) {
+  const rows = r.src === "intra" ? entry.intraRows : entry.dailyRows;
+  if (!rows.length) return { rows, start: 0, firstT: Infinity };
+  let start = 0;
+  if (r.days) {
+    let seen = 0, prev = null;
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const k = fmtDayKey.format(rows[i].t * 1000);
+      if (k !== prev) { if (seen === r.days) { start = i + 1; break; } seen++; prev = k; }
+    }
+  } else {
+    const cutoff = rows.at(-1).t - r.months * 30.44 * DAY;
+    start = Math.max(0, rows.findIndex((x) => x.t >= cutoff));
   }
-  return 0;
+  return { rows, start, firstT: rows[start].t };
+}
+function enabledRanges() {
+  // A range is on when it reaches back to an earlier trading day than the ranges before it.
+  const out = {};
+  let earliest = null;
+  RANGES.forEach((r, i) => {
+    const { firstT } = sliceFor(r);
+    const day = Number.isFinite(firstT) ? fmtDayKey.format(firstT * 1000) : null;
+    out[r.key] = i === 0 || (day != null && day < earliest);
+    if (out[r.key] && day != null && (earliest == null || day < earliest)) earliest = day;
+  });
+  return out;
+}
+function effectiveRange() {
+  const en = enabledRanges();
+  if (en[range]) return range;
+  const idx = RANGES.findIndex((r) => r.key === range);
+  for (let i = Math.min(idx, RANGES.length - 1); i >= 0; i--) if (en[RANGES[i].key]) return RANGES[i].key;
+  return RANGES[0].key;
 }
 function renderRanges() {
-  const opts = rangeOptions();
-  if (!opts.some(([k]) => k === range)) range = opts[1][0];
+  const en = enabledRanges(), eff = effectiveRange();
   const box = $("ranges");
   box.innerHTML = "";
-  for (const [k] of opts) {
-    const b = document.createElement("button");
-    b.textContent = k;
-    b.setAttribute("aria-pressed", String(k === range));
-    b.onclick = () => { range = k; try { localStorage.setItem("antwatch-range", k); } catch {} renderRanges(); renderChart(); };
+  for (const r of RANGES) {
+    const b = h("button", null, r.key);
+    b.setAttribute("aria-pressed", String(r.key === eff));
+    b.disabled = !en[r.key];
+    if (b.disabled) b.title = `${cfg().name} doesn't have more history to show yet`;
+    b.onclick = () => { range = r.key; store.set("stockwatch-range", range); renderRanges(); renderChart(); };
     box.append(b);
   }
-  const r = model.rows.at(-1);
-  $("ema-label").textContent = `Trend line (EMA ${r.slowN})`;
+}
+
+// The official state for any bar on screen: the confirmed state of the last bar of the
+// timeframe the stock is judged on, at or before the end of that on-screen bar.
+function officialStateAt(t, displayIsDaily) {
+  const rows = model.rows, end = t + (displayIsDaily ? DAY - 1 : 0);
+  let lo = 0, hi = rows.length - 1, ans = -1;
+  while (lo <= hi) { const mid = (lo + hi) >> 1; if (rows[mid].t <= end) { ans = mid; lo = mid + 1; } else hi = mid - 1; }
+  return ans < 0 ? "WARMING_UP" : rows[ans].confirmed ?? "WARMING_UP";
 }
 
 // ------------------------------------------------------------------ chart
@@ -165,87 +224,84 @@ function renderChart() {
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   svg.innerHTML = "";
 
-  const all = model.rows, s0 = visibleStart(), rows = all.slice(s0);
+  const rk = effectiveRange(), r = RANGES.find((x) => x.key === rk), isDaily = r.src === "daily";
+  const sl = sliceFor(r), rows = sl.rows.slice(sl.start);
   const n = rows.length;
-  const vals = rows.flatMap((r) => [r.close, r.bbUp, r.bbLo, r.emaSlow]).filter((x) => x != null);
+  if (!n) return;
+  const states = rows.map((x) => officialStateAt(x.t, isDaily));
+  $("ema-label").textContent = `Trend line (EMA ${rows[0].slowN})`;
+
+  const vals = rows.flatMap((x) => [x.close, x.bbUp, x.bbLo, x.emaSlow]).filter((v) => v != null);
   let lo = Math.min(...vals), hi = Math.max(...vals);
   const pad = (hi - lo) * 0.08 || hi * 0.01;
   lo -= pad; hi += pad;
-  const x = (i) => m.l + (n <= 1 ? 0 : (i / (n - 1)) * (W - m.l - m.r));
+  const x = (i) => m.l + (n <= 1 ? (W - m.l - m.r) / 2 : (i / (n - 1)) * (W - m.l - m.r));
   const y = (v) => m.t + (1 - (v - lo) / (hi - lo)) * (plotB - m.t);
 
-  // grid + y labels
   const step = niceStep((hi - lo) / 4);
   for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) {
     el("line", { x1: m.l, x2: W - m.r, y1: y(v), y2: y(v), stroke: cssVar("--grid"), "stroke-width": 1 }, svg);
     el("text", { x: W - m.r + 8, y: y(v) + 4 }, svg).textContent = `$${v.toFixed(step < 1 ? 1 : 0)}`;
   }
 
-  // Bollinger band
-  const band = rows.map((r, i) => [i, r]).filter(([, r]) => r.bbUp != null);
+  const band = rows.map((x, i) => [i, x]).filter(([, x]) => x.bbUp != null);
   if (band.length > 1) {
-    const d = band.map(([i, r], k) => `${k ? "L" : "M"}${x(i)},${y(r.bbUp)}`).join("") +
-      band.slice().reverse().map(([i, r]) => `L${x(i)},${y(r.bbLo)}`).join("") + "Z";
-    el("path", { d, fill: cssVar("--wash") }, svg);
+    el("path", { d: band.map(([i, b], k) => `${k ? "L" : "M"}${x(i)},${y(b.bbUp)}`).join("") +
+      band.slice().reverse().map(([i, b]) => `L${x(i)},${y(b.bbLo)}`).join("") + "Z", fill: cssVar("--wash") }, svg);
   }
-  // EMA trend line
-  const emaPts = rows.map((r, i) => [i, r.emaSlow]).filter(([, v]) => v != null);
+  const emaPts = rows.map((x, i) => [i, x.emaSlow]).filter(([, v]) => v != null);
   if (emaPts.length > 1) el("path", { d: line(emaPts, x, y), fill: "none", stroke: cssVar("--muted"), "stroke-width": 1.5, "stroke-dasharray": "4 3" }, svg);
-  // Price
-  el("path", { d: line(rows.map((r, i) => [i, r.close]), x, y), fill: "none", stroke: cssVar("--ink"), "stroke-width": 2, "stroke-linejoin": "round" }, svg);
-  const lx = x(n - 1), ly = y(rows[n - 1].close);
-  el("circle", { cx: lx, cy: ly, r: 4.5, fill: cssVar("--ink"), stroke: cssVar("--surface"), "stroke-width": 2 }, svg);
+  el("path", { d: line(rows.map((x, i) => [i, x.close]), x, y), fill: "none", stroke: cssVar("--ink"), "stroke-width": 2, "stroke-linejoin": "round" }, svg);
+  el("circle", { cx: x(n - 1), cy: y(rows[n - 1].close), r: 4.5, fill: cssVar("--ink"), stroke: cssVar("--surface"), "stroke-width": 2 }, svg);
 
-  // State strip: one rounded segment per run of the same confirmed state, 2px gaps between runs
+  // State strip: one rounded segment per run of the same state, 2px gaps between runs
   let runStart = 0;
   for (let i = 1; i <= n; i++) {
-    if (i === n || rows[i].confirmed !== rows[runStart].confirmed) {
-      const key = rows[runStart].confirmed ?? "WARMING_UP";
+    if (i === n || states[i] !== states[runStart]) {
+      const key = states[runStart];
       const xa = x(Math.max(0, runStart - 0.5)), xb = x(Math.min(n - 1, i - 0.5));
-      const wSeg = Math.max(1, xb - xa - (i < n ? 2 : 0));
-      const r = el("rect", { x: xa, y: stripY, width: wSeg, height: stripH, rx: Math.min(3, wSeg / 2), fill: cssVar(STATES[key].color) }, svg);
-      el("title", {}, r).textContent = STATES[key].label;
+      const wSeg = Math.max(2, xb - xa - (i < n ? 2 : 0));
+      const seg = el("rect", { x: xa, y: stripY, width: wSeg, height: stripH, rx: Math.min(3, wSeg / 2), fill: cssVar(STATES[key].color) }, svg);
+      el("title", {}, seg).textContent = STATES[key].label;
       runStart = i;
     }
   }
 
-  // x labels: day starts (intraday) or month starts (daily)
+  // x labels: hours (1D), days (5D/1M), months (3M–1Y) or years (5Y)
+  const keyFn = rk === "1D" ? (t) => fmtHour.format(t * 1000) : !isDaily ? (t) => fmtDayKey.format(t * 1000)
+    : rk === "5Y" ? (t) => fmtYear.format(t * 1000) : (t) => fmtDayKey.format(t * 1000).slice(0, 7);
+  const labelFn = rk === "1D" ? (t) => fmtHour.format(t * 1000) : !isDaily ? (t) => fmtDay.format(t * 1000)
+    : rk === "5Y" ? (t) => fmtYear.format(t * 1000) : (t) => fmtMonth.format(t * 1000);
   const marks = [];
-  rows.forEach((r, i) => {
-    const prev = rows[i - 1];
-    const key = (t) => model.useDaily ? fmtDayKey.format(t * 1000).slice(0, 7) : fmtDayKey.format(t * 1000);
-    if (!prev || key(prev.t) !== key(r.t)) marks.push(i);
-  });
-  const maxLabels = Math.max(2, Math.floor((W - m.r) / 70));
+  rows.forEach((row, i) => { if (i === 0 || keyFn(rows[i - 1].t) !== keyFn(row.t)) marks.push(i); });
+  const maxLabels = Math.max(2, Math.floor((W - m.r) / 64));
   const every = Math.ceil(marks.length / maxLabels);
   marks.filter((_, k) => k % every === 0).forEach((i) => {
-    const t = rows[i].t * 1000;
-    const label = model.useDaily ? new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short" }).format(t) : fmtDay.format(t);
     el("line", { x1: x(i), x2: x(i), y1: plotB, y2: plotB + 4, stroke: cssVar("--axis") }, svg);
-    el("text", { x: Math.min(x(i), W - m.r - 30), y: H - 8 }, svg).textContent = label;
+    el("text", { x: Math.min(x(i), W - m.r - 30), y: H - 8 }, svg).textContent = labelFn(rows[i].t);
   });
   el("line", { x1: m.l, x2: W - m.r, y1: plotB, y2: plotB, stroke: cssVar("--axis"), "stroke-width": 1 }, svg);
 
-  // crosshair layer
+  // crosshair + tooltip
   const cross = el("g", { opacity: 0 }, svg);
   const vline = el("line", { y1: m.t, y2: plotB, stroke: cssVar("--ink-2"), "stroke-width": 1 }, cross);
   const dot = el("circle", { r: 4.5, fill: cssVar("--ink"), stroke: cssVar("--surface"), "stroke-width": 2 }, cross);
   const tip = $("tip");
   const show = (i) => {
     hoverIdx = i;
-    const r = rows[i];
+    const row = rows[i], key = states[i];
     cross.setAttribute("opacity", 1);
     vline.setAttribute("x1", x(i)); vline.setAttribute("x2", x(i));
-    dot.setAttribute("cx", x(i)); dot.setAttribute("cy", y(r.close));
-    const key = r.confirmed ?? "WARMING_UP";
+    dot.setAttribute("cx", x(i)); dot.setAttribute("cy", y(row.close));
     tip.innerHTML = "";
-    const add = (cls, txt) => { const d = document.createElement("div"); d.className = cls; d.textContent = txt; tip.append(d); return d; };
-    add("l", `${model.useDaily ? fmtDay.format(r.t * 1000) : fmtTime.format(r.t * 1000) + " ET"}`);
-    add("v", money(r.close));
-    if (r.emaSlow != null) { const row = add("row", ""); row.innerHTML = `<span class="l"></span><span></span>`; row.children[0].textContent = "Trend line"; row.children[1].textContent = money(r.emaSlow); }
-    const st = add("row", ""); st.innerHTML = `<span class="l">State</span><span></span>`;
-    st.children[1].innerHTML = `<i style="display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;background:var(${STATES[key].color})"></i>`;
-    st.children[1].append(STATES[key].label);
+    tip.append(h("div", "l", isDaily ? fmtDayYear.format(row.t * 1000) : `${fmtTime.format(row.t * 1000)} ET`));
+    tip.append(h("div", "v", money(row.close)));
+    const addRow = (label, value) => { const d = h("div", "row"); d.append(h("span", "l", label), value); tip.append(d); };
+    if (row.emaSlow != null) addRow("Trend line", h("span", null, money(row.emaSlow)));
+    const st = h("span");
+    st.innerHTML = `<i style="display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px;background:var(${STATES[key].color})"></i>`;
+    st.append(STATES[key].label);
+    addRow("State", st);
     tip.style.opacity = 1;
     const tw = tip.offsetWidth, px = (x(i) / W) * wrap.clientWidth;
     tip.style.left = `${Math.min(Math.max(0, px + 12 + tw > wrap.clientWidth ? px - tw - 12 : px + 12), wrap.clientWidth - tw)}px`;
@@ -267,29 +323,28 @@ function renderChart() {
     show(Math.max(0, Math.min(n - 1, (hoverIdx ?? n - 1) + (ev.key === "ArrowLeft" ? -1 : 1))));
   };
   svg.onblur = hide;
-  svg.setAttribute("aria-label", `${cfg().name} price over ${range}: ${money(rows[0].close)} to ${money(rows[n - 1].close)}. Current state ${STATES[rows[n - 1].confirmed ?? "WARMING_UP"].label}.`);
+  svg.setAttribute("aria-label", `${cfg().name} price over ${rk}: ${money(rows[0].close)} to ${money(rows[n - 1].close)}. Current state ${STATES[states[n - 1]].label}.`);
 
-  // state key + table
-  const used = [...new Set(rows.map((r) => r.confirmed ?? "WARMING_UP"))];
-  $("state-key").innerHTML = "";
-  for (const k of Object.keys(STATES).filter((k) => used.includes(k))) {
-    const s = document.createElement("span");
-    s.innerHTML = `<i style="background:var(${STATES[k].color})"></i>`;
-    s.append(STATES[k].label);
-    $("state-key").append(s);
+  const keyEl = $("state-key");
+  keyEl.innerHTML = "";
+  for (const k of Object.keys(STATES).filter((k) => states.includes(k))) {
+    const sp = h("span");
+    sp.innerHTML = `<i style="background:var(${STATES[k].color})"></i>`;
+    sp.append(STATES[k].label);
+    keyEl.append(sp);
   }
-  renderTable(rows);
+  renderTable(rows, states, isDaily);
 }
 
-function renderTable(rows) {
+function renderTable(rows, states, isDaily) {
   const tbl = document.createElement("table");
-  tbl.innerHTML = "<tr><th>Time (ET)</th><th>Close</th><th>State</th></tr>";
-  rows.slice(-60).reverse().forEach((r) => {
+  tbl.innerHTML = `<tr><th>${isDaily ? "Date" : "Time (ET)"}</th><th>Close</th><th>State</th></tr>`;
+  for (let i = rows.length - 1; i >= Math.max(0, rows.length - 60); i--) {
     const tr = tbl.insertRow();
-    tr.insertCell().textContent = model.useDaily ? fmtDay.format(r.t * 1000) : fmtTime.format(r.t * 1000);
-    const c = tr.insertCell(); c.className = "num"; c.textContent = money(r.close);
-    tr.insertCell().textContent = STATES[r.confirmed ?? "WARMING_UP"].label;
-  });
+    tr.insertCell().textContent = isDaily ? fmtDayYear.format(rows[i].t * 1000) : fmtTime.format(rows[i].t * 1000);
+    const c = tr.insertCell(); c.className = "num"; c.textContent = money(rows[i].close);
+    tr.insertCell().textContent = STATES[states[i]].label;
+  }
   $("data-table").replaceChildren(tbl);
 }
 
@@ -307,48 +362,131 @@ function renderWatchlist() {
   const nav = $("watchlist");
   nav.innerHTML = "";
   for (const w of WATCHLIST) {
-    const entry = cache[w.symbol];
-    const b = document.createElement("button");
-    b.className = "watch-item";
+    const e = cache[w.symbol];
+    const b = h("button", "watch-item");
     b.setAttribute("aria-pressed", String(w.symbol === current));
-    const top = document.createElement("div"); top.className = "w-name";
-    top.textContent = w.name;
-    const sym = document.createElement("span"); sym.textContent = ` ${w.symbol}`; top.append(sym);
-    const price = document.createElement("div"); price.className = "w-price";
-    const st = document.createElement("div"); st.className = "w-state";
-    if (entry?.data) {
-      const dc = dayChange(entry.data);
-      price.textContent = money(entry.data.price);
-      if (dc != null) { const d = document.createElement("span"); d.className = `delta ${dc >= 0 ? "up" : "down"}`; d.textContent = ` ${pct(dc)}`; price.append(d); }
-      const r = entry.model.rows.at(-1), key = r.confirmed ?? r.state;
+    const top = h("div", "w-name", w.name);
+    top.append(h("span", null, ` ${w.symbol}`));
+    const price = h("div", "w-price", e?.data ? money(e.data.price) : e?.error ? "Unavailable" : "…");
+    const st = h("div", "w-state");
+    if (e?.data) {
+      const dc = dayChange(e.data);
+      if (dc != null) price.append(h("span", `delta ${dc >= 0 ? "up" : "down"}`, ` ${pct(dc)}`));
+      const r = e.model.rows.at(-1), key = r.confirmed ?? r.state;
       st.innerHTML = `<i style="background:var(${STATES[key].color})"></i>`;
       st.append(STATES[key].label);
-    } else {
-      price.textContent = entry?.error ? "Unavailable" : "…";
     }
     b.append(top, price, st);
     b.onclick = () => select(w.symbol);
     nav.append(b);
   }
+  const add = h("button", "watch-item add-item");
+  add.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Add stock</span>';
+  add.setAttribute("aria-expanded", String(!$("add-panel").hidden));
+  add.onclick = () => toggleAdd();
+  nav.append(add);
 }
 function select(symbol) {
   current = symbol;
-  try { localStorage.setItem("stockwatch-symbol", symbol); } catch {}
+  store.set("stockwatch-symbol", symbol);
   if (location.hash !== `#${symbol}`) history.replaceState(null, "", `#${symbol}`);
   renderWatchlist();
   renderCurrent();
 }
 function renderCurrent() {
-  const entry = cache[current];
+  entry = cache[current];
   if (!entry?.data) {
-    $("hero").innerHTML = '<p class="err"></p>';
-    $("hero").firstChild.textContent = entry?.error ? `Couldn't load prices: ${entry.error}. It will try again in a minute.` : "Fetching the latest prices…";
+    $("hero").innerHTML = "";
+    $("hero").append(h("p", entry?.error ? "err" : "skeleton", entry?.error ? `Couldn't load prices: ${entry.error}. It will try again in a minute.` : "Fetching the latest prices…"));
     return;
   }
   ({ data, model } = entry);
   hoverIdx = null;
   renderHero(); renderRanges(); renderSignals(); renderChart();
-  $("fresh").textContent = `Last trade ${fmtTime.format(data.marketTime * 1000)} ET · refreshes every minute`;
+  $("fresh").textContent = entry.stale
+    ? `Couldn't refresh (${entry.stale}). Showing ${fmtTime.format(data.marketTime * 1000)} ET.`
+    : `Last trade ${fmtTime.format(data.marketTime * 1000)} ET · refreshes every minute`;
+}
+
+// ------------------------------------------------------------------ add / remove stocks
+let searchTimer = null, searchSeq = 0;
+function toggleAdd(open) {
+  const panel = $("add-panel");
+  panel.hidden = open === undefined ? !panel.hidden : !open;
+  $("add-key-row").hidden = !!store.get("stockwatch-key");
+  $("add-msg").textContent = "";
+  renderWatchlist();
+  if (!panel.hidden) $("add-search").focus();
+}
+async function runSearch(q) {
+  const seq = ++searchSeq, list = $("add-results");
+  if (!q.trim()) { list.innerHTML = ""; return; }
+  try {
+    const res = await fetch(`/api/search?q=${encodeURIComponent(q.trim())}`);
+    const json = await res.json();
+    if (seq !== searchSeq) return; // a newer search is on its way
+    if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
+    list.innerHTML = "";
+    if (!json.results.length) list.append(h("li", "muted", "No stocks found."));
+    for (const r of json.results) {
+      const li = h("li");
+      const b = h("button", "result");
+      const inList = WATCHLIST.some((w) => w.symbol === r.symbol);
+      b.append(h("b", null, r.symbol), h("span", null, r.name), h("small", null, inList ? "On your list" : [r.exchange, r.type].filter(Boolean).join(" · ")));
+      b.disabled = inList;
+      b.onclick = () => addStock(r.symbol, r.name);
+      li.append(b);
+      list.append(li);
+    }
+  } catch (e) {
+    if (seq === searchSeq) { list.innerHTML = ""; list.append(h("li", "err", `Search failed: ${e.message}`)); }
+  }
+}
+function editKey() {
+  const typed = $("add-key")?.value.trim();
+  if (typed) store.set("stockwatch-key", typed);
+  return store.get("stockwatch-key");
+}
+async function changeList(action, symbol, name) {
+  const key = editKey();
+  if (!key) throw new Error("Enter your edit key first.");
+  const res = await fetch("/api/watchlist", {
+    method: "POST", headers: { "Content-Type": "application/json", "X-Edit-Key": key },
+    body: JSON.stringify({ action, symbol, name }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (res.status === 401) { store.set("stockwatch-key", null); $("add-key-row").hidden = false; }
+  if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
+  WATCHLIST = json.stocks;
+}
+async function addStock(symbol, name) {
+  const msg = $("add-msg");
+  msg.className = "muted"; msg.textContent = `Adding ${symbol}…`;
+  try {
+    await changeList("add", symbol, name);
+    $("add-search").value = ""; $("add-results").innerHTML = "";
+    toggleAdd(false);
+    await fetchOne(symbol);
+    select(symbol);
+  } catch (e) {
+    msg.className = "err"; msg.textContent = e.message;
+  }
+}
+async function removeStock(symbol) {
+  const name = cfg().name;
+  if (!confirm(`Remove ${name} (${symbol}) from your list? You'll stop getting alerts for it.`)) return;
+  if (!store.get("stockwatch-key")) {
+    const k = prompt("Enter your edit key to change the list:");
+    if (!k) return;
+    store.set("stockwatch-key", k.trim());
+  }
+  try {
+    await changeList("remove", symbol);
+    delete cache[symbol];
+    select(WATCHLIST.some((w) => w.symbol === current) ? current : WATCHLIST[0].symbol);
+  } catch (e) {
+    alert(`Couldn't remove ${symbol}: ${e.message}`);
+  }
 }
 
 // ------------------------------------------------------------------ load
@@ -357,28 +495,37 @@ async function fetchOne(symbol) {
     const res = await fetch(`/api/chart?symbol=${encodeURIComponent(symbol)}`, { cache: "no-store" });
     const json = await res.json();
     if (!res.ok || json.error) throw new Error(json.error || `HTTP ${res.status}`);
-    if (!json.intraday?.c?.length) throw new Error("no price data returned yet");
-    cache[symbol] = { data: json, model: analyze(json.intraday, json.daily) };
+    if (!json.intraday?.c?.length && !json.daily?.c?.length) throw new Error("no price data returned yet");
+    const m = analyze(json.intraday, json.daily);
+    const intraRows = m.useDaily ? analyzeSeries(json.intraday, 9, 21) : m.rows;
+    const dailyRows = m.useDaily ? m.rows : analyzeSeries(json.daily, 20, 50);
+    cache[symbol] = { data: json, model: m, intraRows, dailyRows };
   } catch (e) {
     if (cache[symbol]?.data) cache[symbol].stale = e.message; // keep showing the last good data
     else cache[symbol] = { error: e.message };
   }
 }
+async function loadWatchlist() {
+  try {
+    const res = await fetch("/api/watchlist", { cache: "no-store" });
+    const json = await res.json();
+    if (res.ok && Array.isArray(json.stocks) && json.stocks.length) WATCHLIST = json.stocks;
+  } catch {}
+  if (!WATCHLIST.some((w) => w.symbol === current)) current = WATCHLIST[0].symbol;
+}
 async function load() {
+  await loadWatchlist();
   // The selected stock first, so its view appears quickly; then the rest.
   await fetchOne(current);
   renderWatchlist(); renderCurrent();
   await Promise.all(WATCHLIST.filter((w) => w.symbol !== current).map((w) => fetchOne(w.symbol)));
   renderWatchlist();
-  if (cache[current]?.stale) $("fresh").textContent = `Couldn't refresh (${cache[current].stale}). Showing ${fmtTime.format(data.marketTime * 1000)} ET.`;
 }
 
-{
-  const fromHash = location.hash.slice(1).toUpperCase();
-  let saved = null;
-  try { range = localStorage.getItem("antwatch-range"); saved = localStorage.getItem("stockwatch-symbol"); } catch {}
-  current = [fromHash, saved].find((s) => WATCHLIST.some((w) => w.symbol === s)) ?? WATCHLIST[0].symbol;
-}
+current = location.hash.slice(1).toUpperCase() || store.get("stockwatch-symbol") || DEFAULT_WATCHLIST[0].symbol;
+$("add-search").addEventListener("input", (ev) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => runSearch(ev.target.value), 250); });
+$("add-close").onclick = () => toggleAdd(false);
+$("add-panel").addEventListener("keydown", (ev) => { if (ev.key === "Escape") toggleAdd(false); });
 renderWatchlist();
 load();
 setInterval(() => { if (!document.hidden) load(); }, REFRESH_MS);

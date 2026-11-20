@@ -106,6 +106,14 @@ class Watchlist(unittest.TestCase):
         self.assertEqual([w["symbol"] for w in wl], ["ANT", "NVDA", "SPCX"])
         self.assertEqual((wl[0]["ipo"], wl[1]["ipo"], wl[2]["name"]), (83.0, None, "SpaceX"))
 
+    def test_falls_back_when_site_unreachable(self):
+        old = aw.WATCHLIST_URL
+        try:
+            aw.WATCHLIST_URL = "http://127.0.0.1:9/nothing-here"
+            self.assertEqual([w["symbol"] for w in aw.load_watchlist()], ["ANT", "NVDA", "SPCX"])
+        finally:
+            aw.WATCHLIST_URL = old
+
     def test_alerts_name_the_ticker(self):
         s, _ = aw.step({}, {"state": "NORMAL"}, None, "d", "NVDA")
         s, a = aw.step(s, {"state": "NORMAL"}, 6.0, "d", "NVDA")

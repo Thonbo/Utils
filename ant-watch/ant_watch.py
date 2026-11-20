@@ -34,7 +34,9 @@ try:
 except Exception:  # pragma: no cover
     ET = timezone.utc
 
-# WATCHLIST: comma-separated SYMBOL:Name[:IPO price]
+# The watchlist is edited on the website and read from WATCHLIST_URL. WATCHLIST is the fallback
+# used when the site can't be reached: comma-separated SYMBOL:Name[:IPO price].
+WATCHLIST_URL = os.environ.get("WATCHLIST_URL", "")
 WATCHLIST = os.environ.get("WATCHLIST", "ANT:Anthropic:83,NVDA:NVIDIA,SPCX:SpaceX:135")
 BIG_MOVE_PCT = float(os.environ.get("BIG_MOVE_PCT", "5"))
 CONFIRM_RUNS = 2          # a new state must show up this many checks in a row before alerting
@@ -51,6 +53,23 @@ def parse_watchlist(text):
         out.append({"symbol": parts[0].upper(), "name": parts[1] if len(parts) > 1 and parts[1] else parts[0].upper(),
                     "ipo": float(parts[2]) if len(parts) > 2 and parts[2] else None})
     return out
+
+
+def load_watchlist():
+    """The list from the website if available, otherwise the WATCHLIST fallback."""
+    if WATCHLIST_URL:
+        try:
+            req = urllib.request.Request(WATCHLIST_URL, headers={"User-Agent": "stock-watch"})
+            with urllib.request.urlopen(req, timeout=20) as r:
+                stocks = json.load(r)["stocks"]
+            out = [{"symbol": str(x["symbol"]).upper(), "name": str(x.get("name") or x["symbol"]),
+                    "ipo": float(x["ipo"]) if x.get("ipo") else None} for x in stocks if x.get("symbol")]
+            if out:
+                print(f"Watchlist from website: {', '.join(x['symbol'] for x in out)}")
+                return out
+        except Exception as e:  # fall back rather than skip the run
+            print(f"Could not read the watchlist from {WATCHLIST_URL} ({e}); using the built-in list.")
+    return parse_watchlist(WATCHLIST)
 
 # --------------------------------------------------------------------------- indicators
 
@@ -489,7 +508,7 @@ def check(stock, gh, owner, dry_run=False, state_file=None):
     sym = stock["symbol"]
     try:
         intraday = fetch_bars(sym, "15m", "60d")
-        daily = fetch_bars(sym, "1d", "2y")
+        daily = fetch_bars(sym, "1d", "5y")
     except (urllib.error.URLError, ValueError, TimeoutError) as e:
         print(f"{sym}: could not fetch price data, will try again next run: {e}")
         return
@@ -545,7 +564,7 @@ def main():
     owner = os.environ.get("GITHUB_REPOSITORY_OWNER", "")
     gh = None if args.dry_run else GitHub(os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_TOKEN"])
     failed = 0
-    for stock in parse_watchlist(WATCHLIST):
+    for stock in load_watchlist():
         try:
             check(stock, gh, owner, args.dry_run, args.state_file)
         except Exception as e:  # one stock failing must not stop the others

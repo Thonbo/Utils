@@ -51,6 +51,7 @@ h1 span { color: var(--ink-2); font-weight: 400; }
 .seg { display: inline-flex; background: var(--wash); border-radius: 9px; padding: 3px; }
 .seg button { border: 0; background: transparent; color: var(--ink-2); font: inherit; font-size: 13px; padding: 4px 12px; border-radius: 7px; cursor: pointer; }
 .seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 0 0 1px var(--ring); }
+.seg button:disabled { color: var(--muted); opacity: .45; cursor: not-allowed; }
 .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--ink-2); }
 .legend i { display: inline-block; vertical-align: middle; margin-right: 6px; }
 .key-line { width: 14px; height: 2px; background: var(--ink); border-radius: 1px; }
@@ -78,7 +79,30 @@ details ul { padding-left: 18px; margin: 10px 0 0; }
 .foot { color: var(--muted); font-size: 13px; text-align: center; margin-top: 24px; }
 .foot a { color: var(--ink-2); }
 .err { color: var(--down); }
-.watch { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+.watch { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.watch-item.add-item { display: flex; align-items: center; justify-content: center; gap: 6px; color: var(--ink-2); border-style: dashed; font-weight: 600; font-size: 14px; }
+.add-item[aria-expanded="true"] { color: var(--ink); border-color: var(--ink); }
+.add-panel { margin-bottom: 16px; }
+.add-panel[hidden] { display: none; }
+.add-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }
+.add-head h2 { margin: 0; }
+.field { width: 100%; font: inherit; font-size: 16px; color: var(--ink); background: var(--page); border: 1px solid var(--axis); border-radius: 10px; padding: 10px 12px; }
+.field:focus { outline: 2px solid var(--s-stable); outline-offset: 1px; }
+.key-row { margin-top: 10px; display: grid; gap: 6px; font-size: 13px; color: var(--ink-2); }
+.key-row[hidden] { display: none; }
+.results { list-style: none; margin: 8px 0 0; padding: 0; max-height: 320px; overflow: auto; }
+.results li + li { border-top: 1px solid var(--grid); }
+.results .result { width: 100%; display: grid; grid-template-columns: 70px 1fr; column-gap: 10px; text-align: left; font: inherit; color: inherit;
+  background: none; border: 0; padding: 10px 4px; cursor: pointer; border-radius: 8px; }
+.results .result:hover:not(:disabled) { background: var(--wash); }
+.results .result:disabled { cursor: default; opacity: .55; }
+.results .result small { grid-column: 2; color: var(--muted); font-size: 12px; }
+.results .muted, .muted { color: var(--muted); }
+.results li.muted, .results li.err { padding: 10px 4px; }
+.link-btn { justify-self: start; background: none; border: 0; padding: 0; font: inherit; font-size: 13px; color: var(--muted); text-decoration: underline; cursor: pointer; }
+.link-btn:hover { color: var(--ink-2); }
+.icon-btn { background: none; border: 0; color: var(--ink-2); font: inherit; font-size: 14px; cursor: pointer; padding: 4px 8px; border-radius: 6px; }
+.icon-btn:hover { background: var(--wash); }
 .watch-item { text-align: left; font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--ring); border-radius: 12px;
   padding: 12px 14px; cursor: pointer; display: grid; gap: 2px; min-width: 0; }
 .watch-item:hover { border-color: var(--axis); }
@@ -92,7 +116,9 @@ details ul { padding-left: 18px; margin: 10px 0 0; }
 .skeleton { color: var(--muted); padding: 40px 0; text-align: center; }
 @media (max-width: 560px) {
   .price { font-size: 36px; }
-  .watch { gap: 6px; }
+  .watch { display: flex; gap: 6px; overflow-x: auto; scroll-snap-type: x proximity; margin: 0 -16px 16px; padding: 0 16px 4px; }
+  .watch-item { flex: 0 0 132px; scroll-snap-align: start; }
+  .seg button { padding: 4px 8px; }
   .watch-item { padding: 10px; }
   .w-name span { display: none; }
   .w-price { font-size: 15px; }
@@ -107,11 +133,22 @@ details ul { padding-left: 18px; margin: 10px 0 0; }
 <body>
 <main>
   <header>
-    <h1>Stock Watch <span>· Anthropic, NVIDIA, SpaceX</span></h1>
+    <h1>Stock Watch <span>· your watchlist</span></h1>
     <div class="fresh" id="fresh">Loading…</div>
   </header>
 
   <nav class="watch" id="watchlist" aria-label="Watchlist"></nav>
+
+  <section class="card add-panel" id="add-panel" hidden>
+    <div class="add-head"><h2>Add a stock</h2><button class="icon-btn" id="add-close" aria-label="Close">Close</button></div>
+    <input class="field" id="add-search" type="search" placeholder="Search by company or ticker, e.g. Tesla or AAPL" autocomplete="off" aria-label="Search stocks">
+    <div class="key-row" id="add-key-row">
+      <label for="add-key">Your edit key. You only need to enter it once on each device.</label>
+      <input class="field" id="add-key" type="password" autocomplete="off" placeholder="Edit key">
+    </div>
+    <ul class="results" id="add-results" aria-live="polite"></ul>
+    <p id="add-msg" class="muted" style="margin:8px 0 0"></p>
+  </section>
 
   <section class="card hero" id="hero"><div class="skeleton">Fetching the latest prices…</div></section>
 
