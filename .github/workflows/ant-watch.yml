@@ -1,0 +1,28 @@
+name: ANT Watch
+
+on:
+  schedule:
+    # Every 30 min, Mon-Fri, 13:00-21:59 UTC (covers US market hours in both summer and winter time).
+    - cron: "*/30 13-21 * * 1-5"
+  workflow_dispatch: {} # lets you run it by hand from the Actions tab
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: ant-watch
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the stock and update the dashboard issue
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TICKER: ANT
+          IPO_PRICE: "83"
+        run: python3 ant-watch/ant_watch.py
